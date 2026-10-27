@@ -2,10 +2,10 @@ import type { ExternalPluginConfig } from '@windy/interfaces';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-day-night-leg',
-    version: '0.4.0',
+    version: '0.6.0',
     icon: '🌗',
-    title: 'Météo, Jour/Nuit & Trafic aérien',
-    description: 'Affiche le jour, la nuit, les crépuscules et le trafic aérien ADS-B quasi temps réel sur la carte Windy.',
+    title: 'Météo & Vols',
+    description: 'Jour/nuit, crépuscules et trafic aérien ADS-B quasi temps réel sur Windy.',
     author: 'Gauthier Descolas',
     repository: 'https://github.com/8grd5f86gw-debug/LeG',
     homepage: 'https://8grd5f86gw-debug.github.io/LeG/',

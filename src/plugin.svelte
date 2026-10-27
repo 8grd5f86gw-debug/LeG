@@ -1,63 +1,112 @@
-<div class:collapsed class="day-night-panel">
+<div class:collapsed class="weather-flights-panel">
     <div class="header-row">
-        <div class="day-night-title">🌗 Météo & Vols</div>
-        <button class="collapse-btn" on:click={() => (collapsed = !collapsed)} aria-label="Réduire le panneau">
+        <div class="panel-title">🌗 Météo & Vols</div>
+        <button class="icon-btn collapse-btn" on:click={() => (collapsed = !collapsed)} aria-label="Réduire le panneau">
             {collapsed ? '▾' : '▴'}
         </button>
     </div>
 
     {#if !collapsed}
-        <section class="section">
-            <div class="section-title">Jour / nuit</div>
-            <div class="controls-grid">
-                <label class="toggle-row">
-                    <input type="checkbox" bind:checked={enabled} on:change={redraw} />
-                    <span>Nuit</span>
-                </label>
-                <label class="toggle-row">
-                    <input type="checkbox" bind:checked={showTwilight} on:change={redraw} />
-                    <span>Crépuscules</span>
-                </label>
-                <label class="toggle-row wide">
-                    <input type="checkbox" bind:checked={showTerminator} on:change={redraw} />
-                    <span>Terminateur</span>
-                </label>
-            </div>
+        <div class="tabs" role="tablist" aria-label="Sections du plugin">
+            <button class:active={activeTab === 'sky'} on:click={() => (activeTab = 'sky')}>☾ Ciel</button>
+            <button class:active={activeTab === 'traffic'} on:click={() => (activeTab = 'traffic')}>✈ Vols</button>
+        </div>
 
-            <div class="slider-row">
-                <span>Opacité</span>
-                <strong>{Math.round(Number(opacity) * 100)}%</strong>
-            </div>
-            <input class="opacity-slider" type="range" min="0.15" max="0.70" step="0.05" bind:value={opacity} on:input={redraw} />
-        </section>
+        <div class="panel-body">
+            {#if activeTab === 'sky'}
+                <section class="section sky-section">
+                    <div class="control-grid">
+                        <label class="check-control">
+                            <input type="checkbox" bind:checked={enabled} on:change={redraw} />
+                            <span>Nuit</span>
+                        </label>
+                        <label class="check-control">
+                            <input type="checkbox" bind:checked={showTwilight} on:change={redraw} />
+                            <span>Crépuscules</span>
+                        </label>
+                        <label class="check-control full">
+                            <input type="checkbox" bind:checked={showTerminator} on:change={redraw} />
+                            <span>Terminateur jour / nuit</span>
+                        </label>
+                    </div>
 
-        <section class="section aircraft-section">
-            <div class="section-title section-title-row">
-                <span>✈ Trafic aérien</span>
-                <label class="switch-mini">
-                    <input type="checkbox" bind:checked={showAircraft} on:change={toggleAircraft} />
-                    <span></span>
-                </label>
-            </div>
+                    <div class="setting-row opacity-row">
+                        <span>Opacité de la nuit</span>
+                        <strong>{Math.round(Number(opacity) * 100)}%</strong>
+                    </div>
+                    <input class="opacity-slider" type="range" min="0.15" max="0.70" step="0.05" bind:value={opacity} on:input={redraw} />
 
-            {#if showAircraft}
-                <div class="traffic-status">
-                    <span class:ok={aircraftStatus === 'ok'} class:error={aircraftStatus === 'error'}>
-                        {aircraftStatusText}
-                    </span>
-                    <button class="refresh-btn" on:click={refreshAircraft} title="Actualiser">↻</button>
-                </div>
+                    <div class="twilight-legend">
+                        <span><i class="tw civil"></i>Civil</span>
+                        <span><i class="tw nautical"></i>Nautique</span>
+                        <span><i class="tw astro"></i>Astro.</span>
+                        <span><i class="tw night"></i>Nuit</span>
+                    </div>
 
-                <div class="range-row">
-                    <span>Zone</span>
-                    <strong>{aircraftRadiusNm} NM</strong>
-                </div>
-                <div class="hint">Actualisation : 15 s · selon la zone affichée</div>
+                    <div class="footer-info">{displayTime}</div>
+                </section>
+            {:else}
+                <section class="section traffic-section">
+                    <div class="traffic-head">
+                        <div>
+                            <div class="section-title">Trafic aérien</div>
+                            <div class="subtle">ADS-B autour du centre de la carte</div>
+                        </div>
+                        <label class="switch-mini" title="Afficher le trafic aérien">
+                            <input type="checkbox" bind:checked={showAircraft} on:change={toggleAircraft} />
+                            <span></span>
+                        </label>
+                    </div>
+
+                    {#if showAircraft}
+                        <div class="status-card" class:status-error={aircraftStatus === 'error'} class:status-ok={aircraftStatus === 'ok'}>
+                            <span class="status-dot"></span>
+                            <span class="status-text">{aircraftStatusText}</span>
+                            <button class="icon-btn refresh-btn" on:click={refreshAircraft} title="Actualiser maintenant">↻</button>
+                        </div>
+
+                        <div class="settings-box">
+                            <div class="setting-row">
+                                <span>Zone</span>
+                                <strong>{aircraftRadiusNm} NM</strong>
+                            </div>
+                            <div class="setting-row">
+                                <label for="refresh-rate">Rafraîchissement</label>
+                                <select id="refresh-rate" bind:value={refreshSeconds} on:change={changeRefreshRate}>
+                                    <option value={2}>2 s</option>
+                                    <option value={5}>5 s</option>
+                                    <option value={10}>10 s</option>
+                                    <option value={15}>15 s</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button class="legend-toggle" on:click={() => (showAltitudeLegend = !showAltitudeLegend)}>
+                            <span>Couleurs d'altitude</span>
+                            <span>{showAltitudeLegend ? '−' : '+'}</span>
+                        </button>
+
+                        {#if showAltitudeLegend}
+                            <div class="altitude-legend">
+                                <span><i style="background:#6ee7b7"></i>0–2.5k</span>
+                                <span><i style="background:#22c55e"></i>2.5–5k</span>
+                                <span><i style="background:#38bdf8"></i>5–10k</span>
+                                <span><i style="background:#2563eb"></i>10–20k</span>
+                                <span><i style="background:#a78bfa"></i>20–30k</span>
+                                <span><i style="background:#f59e0b"></i>30–40k</span>
+                                <span><i style="background:#ef4444"></i>40–50k</span>
+                                <span><i style="background:#ec4899"></i>50k+</span>
+                            </div>
+                        {/if}
+
+                        <div class="hint">Le mode 2 s est plus réactif mais sollicite davantage la source ADS-B.</div>
+                        <a class="attribution" href="https://adsb.lol/" target="_blank" rel="noreferrer">Données ADS-B : adsb.lol</a>
+                    {:else}
+                        <div class="disabled-note">Active le trafic pour afficher les avions sur la carte.</div>
+                    {/if}
+                </section>
             {/if}
-        </section>
-
-        <div class="time">{displayTime}</div>
-        <a class="attribution" href="https://adsb.fi/" target="_blank" rel="noreferrer">Données ADS-B : adsb.fi</a>
+        </div>
     {/if}
 </div>
 
@@ -66,19 +115,22 @@
     import { map } from '@windy/map';
     import store from '@windy/store';
     import { formatUtc, getTwilightRings } from './solar';
-    import { altitudeColor, fetchAircraft, ktToKmh, type Aircraft } from './airTraffic';
+    import { altitudeBandLabel, altitudeColor, fetchAircraft, ktToKmh, type Aircraft } from './airTraffic';
 
     let enabled = true;
     let showTerminator = true;
     let showTwilight = true;
     let opacity = 0.42;
     let collapsed = false;
+    let activeTab: 'sky' | 'traffic' = 'sky';
     let displayTime = '';
 
     let showAircraft = true;
+    let showAltitudeLegend = false;
     let aircraftStatus: 'idle' | 'loading' | 'ok' | 'error' = 'idle';
     let aircraftStatusText = 'Prêt';
     let aircraftRadiusNm = 100;
+    let refreshSeconds = 5;
     let aircraftTimer: ReturnType<typeof setInterval> | null = null;
     let aircraftAbort: AbortController | null = null;
 
@@ -181,14 +233,23 @@
         }
     }
 
+    // SVG plane is drawn pointing north. Therefore ADS-B track can be applied directly:
+    // 0° north, 90° east, 180° south, 270° west.
     function aircraftIcon(a: Aircraft) {
         const track = Math.round(a.trackDeg ?? 0);
         const color = altitudeColor(a.altitudeFt);
+        const svg = `
+            <div class="aircraft-rotator" style="transform:rotate(${track}deg)">
+                <svg class="aircraft-svg" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="${color}" d="M12 1.2c1 0 1.55.9 1.55 2v4.7l8.05 4.1v2.25l-8.05-2v6.35l3.35 2.25v1.8L12 21.3l-4.9 1.35v-1.8l3.35-2.25v-6.35l-8.05 2V12l8.05-4.1V3.2c0-1.1.55-2 1.55-2z"/>
+                </svg>
+            </div>`;
+
         return L.divIcon({
             className: 'windy-aircraft-icon-wrap',
-            html: `<div class="windy-aircraft-icon" style="color:${color};transform:rotate(${track}deg)">✈</div>`,
-            iconSize: [22, 22],
-            iconAnchor: [11, 11],
+            html: svg,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13],
         });
     }
 
@@ -200,7 +261,8 @@
         const vr = a.verticalRateFpm === undefined ? '' : `<div>Vertical : ${Math.round(a.verticalRateFpm)} ft/min</div>`;
         const reg = a.registration ? `<div>Immat. : ${a.registration}</div>` : '';
         const type = a.type ? `<div>Type : ${a.type}</div>` : '';
-        return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}</div>`;
+        const band = altitudeBandLabel(a.altitudeFt);
+        return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Palier couleur : ${band}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}</div>`;
     }
 
     async function refreshAircraft() {
@@ -223,7 +285,7 @@
                     riseOnHover: true,
                     zIndexOffset: 900,
                 });
-                marker.bindPopup(popupHtml(a), { maxWidth: 220 });
+                marker.bindPopup(popupHtml(a), { maxWidth: 230 });
                 marker.addTo(map);
                 aircraftLayers.push(marker);
             }
@@ -238,7 +300,15 @@
 
     function startAircraftTimer() {
         if (aircraftTimer) clearInterval(aircraftTimer);
-        if (showAircraft) aircraftTimer = setInterval(refreshAircraft, 15000);
+        aircraftTimer = null;
+        if (showAircraft) {
+            aircraftTimer = setInterval(refreshAircraft, Number(refreshSeconds) * 1000);
+        }
+    }
+
+    function changeRefreshRate() {
+        startAircraftTimer();
+        refreshAircraft();
     }
 
     function toggleAircraft() {
@@ -279,48 +349,283 @@
 </script>
 
 <style lang="less">
-    .day-night-panel {
+    .weather-flights-panel {
         box-sizing: border-box;
-        width: 198px;
-        padding: 9px 10px;
-        border-radius: 10px;
+        width: 228px;
         color: #fff;
-        background: rgba(26, 29, 34, 0.90);
-        box-shadow: 0 3px 14px rgba(0, 0, 0, 0.24);
-        backdrop-filter: blur(8px);
+        background: rgba(27, 30, 35, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-radius: 13px;
+        box-shadow: 0 5px 22px rgba(0, 0, 0, 0.34);
+        backdrop-filter: blur(10px);
+        overflow: hidden;
         font-size: 11.5px;
-        line-height: 1.2;
+        line-height: 1.25;
     }
-    .day-night-panel.collapsed { width: 154px; padding: 8px 10px; }
-    .header-row, .section-title-row, .traffic-status, .range-row, .slider-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .day-night-title { font-size: 13px; font-weight: 700; white-space: nowrap; }
-    .collapse-btn, .refresh-btn { border: 0; background: transparent; color: rgba(255,255,255,.78); cursor: pointer; padding: 0 2px; }
+
+    .weather-flights-panel.collapsed { width: 164px; }
+
+    .header-row {
+        height: 39px;
+        padding: 0 10px 0 11px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .panel-title {
+        font-size: 14px;
+        font-weight: 750;
+        letter-spacing: -0.1px;
+        white-space: nowrap;
+    }
+
+    .icon-btn {
+        border: 0;
+        background: transparent;
+        color: rgba(255,255,255,.8);
+        cursor: pointer;
+        padding: 2px 4px;
+    }
+
+    .collapse-btn { font-size: 11px; }
+
+    .tabs {
+        margin: 0 8px;
+        padding: 3px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3px;
+        background: rgba(255,255,255,.06);
+        border-radius: 9px;
+    }
+
+    .tabs button {
+        border: 0;
+        border-radius: 7px;
+        padding: 6px 5px;
+        background: transparent;
+        color: rgba(255,255,255,.68);
+        font-size: 11px;
+        font-weight: 650;
+        cursor: pointer;
+    }
+
+    .tabs button.active {
+        background: rgba(255,255,255,.12);
+        color: #fff;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+    }
+
+    .panel-body {
+        max-height: 285px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+    }
+
+    .section { padding: 10px 11px 11px; }
+
+    .control-grid {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        gap: 7px 8px;
+    }
+
+    .check-control {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+    }
+
+    .check-control.full { grid-column: 1 / -1; }
+    .check-control input { margin: 0; transform: scale(.9); }
+
+    .setting-row,
+    .traffic-head,
+    .status-card,
+    .legend-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .opacity-row { margin-top: 11px; }
+    .opacity-slider { width: 100%; height: 13px; margin-top: 3px; }
+
+    .twilight-legend {
+        margin-top: 9px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px 8px;
+        color: rgba(255,255,255,.72);
+        font-size: 9.5px;
+    }
+
+    .twilight-legend span { display: flex; align-items: center; gap: 5px; }
+    .tw { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .tw.civil { background:#416786; }
+    .tw.nautical { background:#263f58; }
+    .tw.astro { background:#11243a; }
+    .tw.night { background:#06090f; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+
+    .footer-info {
+        margin-top: 9px;
+        padding-top: 7px;
+        border-top: 1px solid rgba(255,255,255,.09);
+        color: rgba(255,255,255,.55);
+        font-size: 9.5px;
+    }
+
+    .traffic-head { align-items: flex-start; }
+    .section-title { font-weight: 750; font-size: 12.5px; }
+    .subtle { margin-top: 2px; color: rgba(255,255,255,.55); font-size: 9.5px; }
+
+    .status-card {
+        margin-top: 10px;
+        min-height: 30px;
+        padding: 0 7px;
+        border-radius: 8px;
+        background: rgba(255,255,255,.055);
+        border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        flex: 0 0 auto;
+    }
+
+    .status-ok .status-dot { background: #22c55e; }
+    .status-error .status-dot { background: #ef4444; }
+    .status-text { flex: 1; min-width: 0; font-size: 10.5px; }
+    .status-error .status-text { color: #ff9b9b; }
     .refresh-btn { font-size: 15px; }
-    .section { margin-top: 8px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,.11); }
-    .section-title { font-weight: 700; font-size: 11px; opacity: .95; margin-bottom: 5px; }
-    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; }
-    .toggle-row { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-    .toggle-row.wide { grid-column: 1 / -1; }
-    .toggle-row input { margin: 0; transform: scale(.90); }
-    .slider-row { margin-top: 7px; margin-bottom: 2px; }
-    .opacity-slider { width: 100%; height: 12px; }
-    .traffic-status { min-height: 18px; font-size: 10.5px; }
-    .traffic-status .ok { color: #9be49e; }
-    .traffic-status .error { color: #ff9b9b; }
-    .range-row { margin-top: 3px; font-size: 10.5px; }
-    .hint { margin-top: 3px; font-size: 9.5px; opacity: .60; }
-    .time { margin-top: 8px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,.11); opacity: .75; font-size: 9.5px; }
-    .attribution { display: inline-block; margin-top: 4px; color: rgba(255,255,255,.65); font-size: 9.5px; text-decoration: none; }
+
+    .settings-box {
+        margin-top: 8px;
+        padding: 7px 8px;
+        border-radius: 8px;
+        background: rgba(0,0,0,.13);
+    }
+
+    .settings-box .setting-row + .setting-row { margin-top: 7px; }
+
+    select {
+        max-width: 74px;
+        border: 1px solid rgba(255,255,255,.16);
+        background: rgba(255,255,255,.08);
+        color: #fff;
+        border-radius: 6px;
+        padding: 3px 5px;
+        font: inherit;
+    }
+
+    .legend-toggle {
+        width: 100%;
+        margin-top: 8px;
+        padding: 5px 0 3px;
+        border: 0;
+        background: transparent;
+        color: rgba(255,255,255,.78);
+        font: inherit;
+        cursor: pointer;
+    }
+
+    .altitude-legend {
+        margin-top: 4px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px 7px;
+        color: rgba(255,255,255,.68);
+        font-size: 9px;
+    }
+
+    .altitude-legend span { display: flex; align-items: center; gap: 5px; }
+    .altitude-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+
+    .hint,
+    .disabled-note {
+        margin-top: 8px;
+        color: rgba(255,255,255,.48);
+        font-size: 9px;
+        line-height: 1.3;
+    }
+
+    .attribution {
+        display: inline-block;
+        margin-top: 6px;
+        color: rgba(255,255,255,.52);
+        font-size: 9px;
+        text-decoration: none;
+    }
+
     .attribution:hover { color: #fff; text-decoration: underline; }
 
     .switch-mini input { display: none; }
-    .switch-mini span { display: inline-block; width: 25px; height: 14px; border-radius: 99px; background: rgba(255,255,255,.22); position: relative; cursor: pointer; }
-    .switch-mini span::after { content: ''; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #fff; top: 2px; left: 2px; transition: .15s; }
-    .switch-mini input:checked + span { background: #2d9e56; }
-    .switch-mini input:checked + span::after { left: 13px; }
+    .switch-mini span {
+        display: inline-block;
+        width: 31px;
+        height: 17px;
+        border-radius: 99px;
+        background: rgba(255,255,255,.22);
+        position: relative;
+        cursor: pointer;
+    }
+    .switch-mini span::after {
+        content: '';
+        position: absolute;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: #fff;
+        top: 2px;
+        left: 2px;
+        transition: .15s;
+    }
+    .switch-mini input:checked + span { background: #2da85a; }
+    .switch-mini input:checked + span::after { left: 16px; }
 
-    :global(.windy-aircraft-icon-wrap) { background: transparent !important; border: 0 !important; }
-    :global(.windy-aircraft-icon) { width: 22px; height: 22px; line-height: 22px; text-align: center; font-size: 17px; font-weight: 700; filter: drop-shadow(0 1px 2px rgba(0,0,0,.9)); transform-origin: 50% 50%; }
-    :global(.windy-aircraft-popup) { font-size: 12px; line-height: 1.35; min-width: 145px; }
-    :global(.windy-aircraft-popup strong) { display: block; margin-bottom: 4px; font-size: 13px; }
+    :global(.windy-aircraft-icon-wrap) {
+        background: transparent !important;
+        border: 0 !important;
+    }
+
+    :global(.aircraft-rotator) {
+        width: 26px;
+        height: 26px;
+        transform-origin: 50% 50%;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,.95));
+    }
+
+    :global(.aircraft-svg) {
+        display: block;
+        width: 26px;
+        height: 26px;
+        overflow: visible;
+    }
+
+    :global(.aircraft-svg path) {
+        stroke: rgba(255,255,255,.92);
+        stroke-width: .75px;
+        vector-effect: non-scaling-stroke;
+    }
+
+    :global(.windy-aircraft-popup) {
+        font-size: 12px;
+        line-height: 1.35;
+        min-width: 155px;
+    }
+
+    :global(.windy-aircraft-popup strong) {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+    }
 </style>
