@@ -11,6 +11,13 @@ export type SunPoint = {
     antisolarLon: number;
 };
 
+export type TwilightRings = {
+    terminator: [number, number][];
+    civil: [number, number][];
+    nautical: [number, number][];
+    astronomical: [number, number][];
+};
+
 export function getSunPoint(timestampMs: number): SunPoint {
     const jd = timestampMs / 86400000 + 2440587.5;
     const n = jd - 2451545.0;
@@ -39,17 +46,22 @@ export function getSunPoint(timestampMs: number): SunPoint {
     };
 }
 
-export function getNightHemisphereRing(timestampMs: number, steps = 240): [number, number][] {
-    const sun = getSunPoint(timestampMs);
-    const lat1 = sun.antisolarLat * DEG;
-    const lon1 = sun.antisolarLon * DEG;
-    const distance = Math.PI / 2;
+function getRingFromCenter(
+    centerLatDeg: number,
+    centerLonDeg: number,
+    angularRadiusDeg: number,
+    steps = 240,
+): [number, number][] {
+    const lat1 = centerLatDeg * DEG;
+    const lon1 = centerLonDeg * DEG;
+    const distance = angularRadiusDeg * DEG;
 
     const points: [number, number][] = [];
     let previousLon: number | null = null;
 
     for (let i = 0; i <= steps; i += 1) {
         const bearing = (i / steps) * Math.PI * 2;
+
         const lat2 = Math.asin(
             Math.sin(lat1) * Math.cos(distance) +
             Math.cos(lat1) * Math.sin(distance) * Math.cos(bearing),
@@ -73,6 +85,24 @@ export function getNightHemisphereRing(timestampMs: number, steps = 240): [numbe
     }
 
     return points;
+}
+
+export function getTwilightRings(timestampMs: number, steps = 240): TwilightRings {
+    const sun = getSunPoint(timestampMs);
+
+    return {
+        // soleil à l’horizon
+        terminator: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 90, steps),
+
+        // soleil entre 0° et -6°
+        civil: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 84, steps),
+
+        // soleil entre -6° et -12°
+        nautical: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 78, steps),
+
+        // soleil entre -12° et -18°
+        astronomical: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 72, steps),
+    };
 }
 
 export function formatUtc(timestampMs: number): string {
