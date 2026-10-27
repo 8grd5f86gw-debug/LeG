@@ -1,0 +1,21 @@
+IMPORTANT POUR TON DEPOT GitHub "LeG"
+
+1) Le contenu de ce ZIP doit etre a la RACINE du depot LeG.
+   package.json doit donc etre visible directement quand tu ouvres :
+   https://github.com/8grd5f86gw-debug/LeG
+
+2) Ne mets pas ce projet dans un sous-dossier "windy-plugin-day-night-github".
+
+3) Ton ancien dossier "windy-plugin-day-night" peut etre supprime une fois les nouveaux fichiers ajoutes.
+
+4) Le dossier .github est cache par macOS.
+   Dans Finder : Cmd + Maj + . permet d'afficher les fichiers caches.
+
+5) Dans GitHub : Settings > Pages > Source > GitHub Actions.
+
+6) Ouvre ensuite l'onglet Actions. Le workflow "Build and deploy Windy plugin" doit devenir vert.
+
+7) Quand il est vert, le plugin devrait etre disponible ici :
+   https://8grd5f86gw-debug.github.io/LeG/plugin.js
+
+8) Si l'Action est rouge, envoie une capture de l'erreur.
