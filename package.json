@@ -1,7 +1,7 @@
 {
   "name": "windy-plugin-day-night-leg",
-  "version": "0.1.0",
-  "description": "Windy.com plugin displaying the day/night terminator and the night hemisphere.",
+  "version": "0.4.0",
+  "description": "Windy.com plugin displaying day/night twilight and live ADS-B air traffic.",
   "main": "dist/plugin.min.js",
   "type": "module",
   "scripts": {
@@ -12,7 +12,15 @@
     "type": "git",
     "url": "git+https://github.com/8grd5f86gw-debug/LeG.git"
   },
-  "keywords": ["windy", "windy.com", "plugin", "day-night", "terminator"],
+  "keywords": [
+    "windy",
+    "windy.com",
+    "plugin",
+    "day-night",
+    "twilight",
+    "ads-b",
+    "air-traffic"
+  ],
   "author": "Gauthier Descolas",
   "license": "ISC",
   "homepage": "https://8grd5f86gw-debug.github.io/LeG/",
