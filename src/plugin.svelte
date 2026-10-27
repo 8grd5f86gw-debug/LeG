@@ -52,12 +52,12 @@
                     <span>Zone</span>
                     <strong>{aircraftRadiusNm} NM</strong>
                 </div>
-                <div class="hint">Données : 5 s · animation : 1 s</div>
+                <div class="hint">Actualisation : 15 s · selon la zone affichée</div>
             {/if}
         </section>
 
         <div class="time">{displayTime}</div>
-        <a class="attribution" href="https://adsb.lol/" target="_blank" rel="noreferrer">Données ADS-B : adsb.lol</a>
+        <a class="attribution" href="https://adsb.fi/" target="_blank" rel="noreferrer">Données ADS-B : adsb.fi</a>
     {/if}
 </div>
 
@@ -66,7 +66,7 @@
     import { map } from '@windy/map';
     import store from '@windy/store';
     import { formatUtc, getTwilightRings } from './solar';
-    import { altitudeColor, extrapolateAircraft, fetchAircraftWide, ktToKmh, type Aircraft } from './airTraffic';
+    import { altitudeColor, fetchAircraft, ktToKmh, type Aircraft } from './airTraffic';
 
     let enabled = true;
     let showTerminator = true;
@@ -78,10 +78,8 @@
     let showAircraft = true;
     let aircraftStatus: 'idle' | 'loading' | 'ok' | 'error' = 'idle';
     let aircraftStatusText = 'Prêt';
-    let aircraftRadiusNm = 1000;
+    let aircraftRadiusNm = 100;
     let aircraftTimer: ReturnType<typeof setInterval> | null = null;
-    let aircraftAnimationTimer: ReturnType<typeof setInterval> | null = null;
-    let currentAircraft: Aircraft[] = [];
     let aircraftAbort: AbortController | null = null;
 
     let layers: L.GeoJSON[] = [];
@@ -173,7 +171,14 @@
     }
 
     function viewportRadiusNm(): number {
-        return 1000;
+        try {
+            const center = map.getCenter();
+            const bounds = map.getBounds();
+            const distanceMeters = map.distance(center, bounds.getNorthEast());
+            return Math.max(25, Math.min(250, Math.ceil(distanceMeters / 1852)));
+        } catch {
+            return 100;
+        }
     }
 
     function aircraftIcon(a: Aircraft) {
@@ -198,32 +203,6 @@
         return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}</div>`;
     }
 
-    function renderAircraft(aircraft: Aircraft[]) {
-        clearAircraft();
-        const now = Date.now();
-        for (const a of aircraft) {
-            const [lat, lon] = extrapolateAircraft(a, now);
-            const marker = L.marker([lat, lon], {
-                icon: aircraftIcon(a),
-                keyboard: false,
-                riseOnHover: true,
-                zIndexOffset: 900,
-            });
-            marker.bindPopup(popupHtml(a), { maxWidth: 220 });
-            marker.addTo(map);
-            aircraftLayers.push(marker);
-        }
-    }
-
-    function animateAircraft() {
-        if (!showAircraft || currentAircraft.length === 0) return;
-        const now = Date.now();
-        for (let i = 0; i < aircraftLayers.length && i < currentAircraft.length; i += 1) {
-            const [lat, lon] = extrapolateAircraft(currentAircraft[i], now);
-            aircraftLayers[i].setLatLng([lat, lon]);
-        }
-    }
-
     async function refreshAircraft() {
         if (!showAircraft) return;
         aircraftAbort?.abort();
@@ -232,29 +211,34 @@
         aircraftStatusText = 'Actualisation…';
 
         const center = map.getCenter();
-        aircraftRadiusNm = 1000;
+        aircraftRadiusNm = viewportRadiusNm();
 
         try {
-            const aircraft = await fetchAircraftWide(center.lat, center.lng, aircraftAbort.signal);
-            currentAircraft = aircraft;
-            renderAircraft(currentAircraft);
+            const aircraft = await fetchAircraft(center.lat, center.lng, aircraftRadiusNm, aircraftAbort.signal);
+            clearAircraft();
+            for (const a of aircraft) {
+                const marker = L.marker([a.lat, a.lon], {
+                    icon: aircraftIcon(a),
+                    keyboard: false,
+                    riseOnHover: true,
+                    zIndexOffset: 900,
+                });
+                marker.bindPopup(popupHtml(a), { maxWidth: 220 });
+                marker.addTo(map);
+                aircraftLayers.push(marker);
+            }
             aircraftStatus = 'ok';
             aircraftStatusText = `${aircraft.length} avion${aircraft.length > 1 ? 's' : ''}`;
         } catch (error: any) {
             if (error?.name === 'AbortError') return;
             aircraftStatus = 'error';
             aircraftStatusText = 'Source ADS-B indisponible';
-            console.error('[Windy ADS-B]', error);
         }
     }
 
     function startAircraftTimer() {
         if (aircraftTimer) clearInterval(aircraftTimer);
-        if (aircraftAnimationTimer) clearInterval(aircraftAnimationTimer);
-        if (showAircraft) {
-            aircraftTimer = setInterval(refreshAircraft, 5000);
-            aircraftAnimationTimer = setInterval(animateAircraft, 1000);
-        }
+        if (showAircraft) aircraftTimer = setInterval(refreshAircraft, 15000);
     }
 
     function toggleAircraft() {
@@ -264,10 +248,7 @@
         } else {
             aircraftAbort?.abort();
             if (aircraftTimer) clearInterval(aircraftTimer);
-            if (aircraftAnimationTimer) clearInterval(aircraftAnimationTimer);
             aircraftTimer = null;
-            aircraftAnimationTimer = null;
-            currentAircraft = [];
             clearAircraft();
             aircraftStatus = 'idle';
             aircraftStatusText = 'Prêt';
@@ -292,7 +273,6 @@
         clearAircraft();
         aircraftAbort?.abort();
         if (aircraftTimer) clearInterval(aircraftTimer);
-        if (aircraftAnimationTimer) clearInterval(aircraftAnimationTimer);
         store.off('timestamp', handleTimestamp);
         map.off('moveend', handleMapMove);
     });
