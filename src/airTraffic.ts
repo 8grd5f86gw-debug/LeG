@@ -12,10 +12,8 @@ export type Aircraft = {
     squawk?: string;
     seenPos?: number;
 };
-
-// IMPORTANT : remplace cette URL par l'URL de ton Cloudflare Worker.
-// Exemple : https://windy-adsb-proxy.ton-compte.workers.dev
-const ADSB_PROXY_BASE = 'https://REMPLACE-MOI.workers.dev';
+const ADSB_PROXY_BASE =
+    'https://windy-adsb-proxy.4smmhrd2kk.workers.dev';
 
 const finiteNumber = (value: unknown): number | undefined => {
     const n = typeof value === 'number' ? value : Number(value);
