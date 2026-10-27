@@ -13,7 +13,22 @@ export type Aircraft = {
     seenPos?: number;
 };
 
-// Cloudflare Worker proxy currently used by this plugin.
+export type Airport = {
+    name: string;
+    municipality?: string;
+    iata?: string;
+    icao?: string;
+    lat: number;
+    lon: number;
+};
+
+export type FlightRoute = {
+    callsign: string;
+    airline?: string;
+    origin?: Airport;
+    destination?: Airport;
+};
+
 const ADSB_PROXY_BASE = 'https://windy-adsb-proxy.4smmhrd2kk.workers.dev';
 
 const finiteNumber = (value: unknown): number | undefined => {
@@ -57,20 +72,12 @@ export async function fetchAircraft(
     const url = `${ADSB_PROXY_BASE}/aircraft?lat=${encodeURIComponent(lat.toFixed(4))}&lon=${encodeURIComponent(lon.toFixed(4))}&dist=${radius}`;
 
     const response = await fetch(url, {
-        method: 'GET',
-        signal,
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
+        method: 'GET', signal, headers: { Accept: 'application/json' }, cache: 'no-store',
     });
-
     if (!response.ok) throw new Error(`ADS-B HTTP ${response.status}`);
 
     const data = await response.json();
-    const rawList = Array.isArray(data?.ac)
-        ? data.ac
-        : Array.isArray(data?.aircraft)
-          ? data.aircraft
-          : [];
+    const rawList = Array.isArray(data?.ac) ? data.ac : Array.isArray(data?.aircraft) ? data.aircraft : [];
 
     return rawList
         .map(normalizeAircraft)
@@ -79,8 +86,49 @@ export async function fetchAircraft(
         .slice(0, 500);
 }
 
-// Altitude palette requested by the user.
-// 0 / 2500 / 5000 / 10000 / 20000 / 30000 / 40000 / 50000+ ft
+function normalizeAirport(raw: any): Airport | undefined {
+    if (!raw) return undefined;
+    const lat = finiteNumber(raw.latitude ?? raw.lat);
+    const lon = finiteNumber(raw.longitude ?? raw.lon ?? raw.lng);
+    if (lat === undefined || lon === undefined) return undefined;
+    return {
+        name: String(raw.name ?? raw.airport_name ?? raw.icao_code ?? raw.iata_code ?? 'Aéroport'),
+        municipality: raw.municipality ? String(raw.municipality) : undefined,
+        iata: raw.iata_code ? String(raw.iata_code) : raw.iata ? String(raw.iata) : undefined,
+        icao: raw.icao_code ? String(raw.icao_code) : raw.icao ? String(raw.icao) : undefined,
+        lat, lon,
+    };
+}
+
+export async function fetchFlightRoute(
+    callsign: string,
+    signal?: AbortSignal,
+): Promise<FlightRoute | null> {
+    const clean = callsign.trim();
+    if (!clean || clean === 'Avion') return null;
+
+    const response = await fetch(`${ADSB_PROXY_BASE}/route?callsign=${encodeURIComponent(clean)}`, {
+        method: 'GET', signal, headers: { Accept: 'application/json' }, cache: 'no-store',
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Route HTTP ${response.status}`);
+
+    const data = await response.json();
+    const route = data?.response?.flightroute ?? data?.flightroute ?? data?.route ?? data;
+    if (!route || typeof route !== 'object') return null;
+
+    const origin = normalizeAirport(route.origin);
+    const destination = normalizeAirport(route.destination);
+    if (!origin && !destination) return null;
+
+    return {
+        callsign: String(route.callsign ?? clean),
+        airline: route.airline?.name ? String(route.airline.name) : undefined,
+        origin,
+        destination,
+    };
+}
+
 export function altitudeColor(altitudeFt?: number): string {
     if (altitudeFt === undefined) return '#f2f4f7';
     if (altitudeFt < 2500) return '#6ee7b7';
@@ -91,18 +139,6 @@ export function altitudeColor(altitudeFt?: number): string {
     if (altitudeFt < 40000) return '#f59e0b';
     if (altitudeFt < 50000) return '#ef4444';
     return '#ec4899';
-}
-
-export function altitudeBandLabel(altitudeFt?: number): string {
-    if (altitudeFt === undefined) return 'Altitude inconnue';
-    if (altitudeFt < 2500) return '0–2 500 ft';
-    if (altitudeFt < 5000) return '2 500–5 000 ft';
-    if (altitudeFt < 10000) return '5 000–10 000 ft';
-    if (altitudeFt < 20000) return '10 000–20 000 ft';
-    if (altitudeFt < 30000) return '20 000–30 000 ft';
-    if (altitudeFt < 40000) return '30 000–40 000 ft';
-    if (altitudeFt < 50000) return '40 000–50 000 ft';
-    return '50 000+ ft';
 }
 
 export const ktToKmh = (kt?: number) => (kt === undefined ? undefined : kt * 1.852);

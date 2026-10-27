@@ -2,7 +2,7 @@ import type { ExternalPluginConfig } from '@windy/interfaces';
 
 const config: ExternalPluginConfig = {
     name: 'windy-plugin-day-night-leg',
-    version: '0.7.0',
+    version: '0.8.0',
     icon: '🌗',
     title: 'Météo & Vols',
     description: 'Jour/nuit, crépuscules et trafic aérien ADS-B quasi temps réel sur Windy.',

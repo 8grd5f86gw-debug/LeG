@@ -97,7 +97,7 @@
     import { map } from '@windy/map';
     import store from '@windy/store';
     import { formatUtc, getTwilightRings } from './solar';
-    import { altitudeColor, fetchAircraft, ktToKmh, type Aircraft } from './airTraffic';
+    import { altitudeColor, fetchAircraft, fetchFlightRoute, ktToKmh, type Aircraft, type FlightRoute } from './airTraffic';
 
     let enabled = true;
     let showTerminator = true;
@@ -128,9 +128,16 @@
         startedAt: number;
         durationMs: number;
         lastSeenAt: number;
+        trail: [number, number][];
     };
 
     const aircraftMarkers = new Map<string, AircraftMarkerState>();
+    const routeCache = new Map<string, FlightRoute | null>();
+    const routeLoading = new Set<string>();
+    let selectedAircraftKey: string | null = null;
+    let selectedTrailLayer: L.Polyline | null = null;
+    let destinationLine: L.Polyline | null = null;
+    let destinationMarker: L.Marker | null = null;
     let animationFrame: number | null = null;
 
     const clearLayers = () => {
@@ -138,7 +145,18 @@
         layers = [];
     };
 
+    const clearSelectionLayers = () => {
+        selectedTrailLayer?.remove();
+        destinationLine?.remove();
+        destinationMarker?.remove();
+        selectedTrailLayer = null;
+        destinationLine = null;
+        destinationMarker = null;
+        selectedAircraftKey = null;
+    };
+
     const clearAircraft = () => {
+        clearSelectionLayers();
         for (const state of aircraftMarkers.values()) state.marker.remove();
         aircraftMarkers.clear();
     };
@@ -268,6 +286,14 @@
         });
     }
 
+    function airportLabel(route: FlightRoute | null | undefined, which: 'origin' | 'destination'): string {
+        const airport = route?.[which];
+        if (!airport) return '—';
+        const code = airport.iata || airport.icao || '';
+        const place = airport.municipality || airport.name;
+        return code ? `${code} · ${place}` : place;
+    }
+
     function popupHtml(a: Aircraft): string {
         const alt = a.altitudeFt === undefined ? '—' : `${Math.round(a.altitudeFt).toLocaleString('fr-FR')} ft`;
         const speedKmh = ktToKmh(a.groundSpeedKt);
@@ -276,7 +302,91 @@
         const vr = a.verticalRateFpm === undefined ? '' : `<div>Vertical : ${Math.round(a.verticalRateFpm)} ft/min</div>`;
         const reg = a.registration ? `<div>Immat. : ${a.registration}</div>` : '';
         const type = a.type ? `<div>Type : ${a.type}</div>` : '';
-        return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}</div>`;
+        const cached = routeCache.get(a.callsign.trim());
+        const loading = routeLoading.has(a.callsign.trim());
+        let routeHtml = '';
+        if (cached) {
+            routeHtml = `<div class="route-block"><div class="route-title">${cached.airline || 'Route du vol'}</div><div>Départ : ${airportLabel(cached, 'origin')}</div><div>Arrivée : ${airportLabel(cached, 'destination')}</div><div class="route-note">Trait plein : trajet observé · pointillés : destination</div></div>`;
+        } else if (loading) {
+            routeHtml = `<div class="route-block route-muted">Recherche de la destination…</div>`;
+        } else {
+            routeHtml = `<div class="route-block route-muted">Destination non disponible</div>`;
+        }
+        return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}${routeHtml}</div>`;
+    }
+
+    function updateSelectedOverlay() {
+        if (!selectedAircraftKey) return;
+        const state = aircraftMarkers.get(selectedAircraftKey);
+        if (!state) return;
+
+        if (!selectedTrailLayer) {
+            selectedTrailLayer = L.polyline(state.trail, {
+                color: '#ffffff', weight: 2.2, opacity: 0.82, interactive: false,
+            }).addTo(map);
+        } else {
+            selectedTrailLayer.setLatLngs(state.trail);
+        }
+
+        const route = routeCache.get(state.data.callsign.trim());
+        const destination = route?.destination;
+        if (!destination) {
+            destinationLine?.remove(); destinationLine = null;
+            destinationMarker?.remove(); destinationMarker = null;
+            return;
+        }
+
+        const current = state.marker.getLatLng();
+        const target: [number, number] = [destination.lat, destination.lon];
+        if (!destinationLine) {
+            destinationLine = L.polyline([[current.lat, current.lng], target], {
+                color: '#ffffff', weight: 1.6, opacity: 0.65, dashArray: '6 7', interactive: false,
+            }).addTo(map);
+        } else {
+            destinationLine.setLatLngs([[current.lat, current.lng], target]);
+        }
+
+        const label = destination.iata || destination.icao || 'ARR';
+        const icon = L.divIcon({
+            className: 'destination-airport-icon',
+            html: `<div class="destination-badge">🛬 ${label}</div>`,
+            iconSize: [74, 24], iconAnchor: [37, 12],
+        });
+        if (!destinationMarker) {
+            destinationMarker = L.marker(target, { icon, interactive: false, zIndexOffset: 850 }).addTo(map);
+        } else {
+            destinationMarker.setLatLng(target);
+            destinationMarker.setIcon(icon);
+        }
+    }
+
+    async function selectAircraft(key: string) {
+        const state = aircraftMarkers.get(key);
+        if (!state) return;
+        selectedAircraftKey = key;
+        updateSelectedOverlay();
+
+        const callsign = state.data.callsign.trim();
+        if (!callsign || callsign === 'Avion' || routeCache.has(callsign) || routeLoading.has(callsign)) {
+            state.marker.setPopupContent(popupHtml(state.data));
+            return;
+        }
+
+        routeLoading.add(callsign);
+        state.marker.setPopupContent(popupHtml(state.data));
+        try {
+            const route = await fetchFlightRoute(callsign);
+            routeCache.set(callsign, route);
+        } catch {
+            routeCache.set(callsign, null);
+        } finally {
+            routeLoading.delete(callsign);
+            const latest = aircraftMarkers.get(key);
+            if (latest) {
+                latest.marker.setPopupContent(popupHtml(latest.data));
+                updateSelectedOverlay();
+            }
+        }
     }
 
     function updateMarkerVisual(state: AircraftMarkerState, track: number) {
@@ -302,6 +412,11 @@
                 const track = lerpAngle(state.fromTrack, state.toTrack, t);
                 state.marker.setLatLng([lat, lon]);
                 updateMarkerVisual(state, track);
+                if (selectedAircraftKey && aircraftMarkers.get(selectedAircraftKey) === state && destinationLine) {
+                    const route = routeCache.get(state.data.callsign.trim());
+                    const dest = route?.destination;
+                    if (dest) destinationLine.setLatLngs([[lat, lon], [dest.lat, dest.lon]]);
+                }
             }
 
             animationFrame = requestAnimationFrame(tick);
@@ -344,8 +459,14 @@
                     existing.startedAt = now;
                     existing.durationMs = durationMs;
                     existing.lastSeenAt = wallNow;
+                    const lastTrail = existing.trail[existing.trail.length - 1];
+                    if (!lastTrail || map.distance(L.latLng(lastTrail[0], lastTrail[1]), L.latLng(a.lat, a.lon)) > 150) {
+                        existing.trail.push([a.lat, a.lon]);
+                        if (existing.trail.length > 720) existing.trail.shift();
+                    }
                     existing.data = a;
                     existing.marker.setPopupContent(popupHtml(a));
+                    if (selectedAircraftKey === key) updateSelectedOverlay();
                     updateMarkerVisual(existing, existing.fromTrack);
                 } else {
                     const marker = L.marker([a.lat, a.lon], {
@@ -354,7 +475,8 @@
                         riseOnHover: true,
                         zIndexOffset: 900,
                     });
-                    marker.bindPopup(popupHtml(a), { maxWidth: 230, autoPan: true });
+                    marker.bindPopup(popupHtml(a), { maxWidth: 260, autoPan: true });
+                    marker.on('click', () => selectAircraft(key));
                     marker.addTo(map);
                     aircraftMarkers.set(key, {
                         marker,
@@ -368,6 +490,7 @@
                         startedAt: now,
                         durationMs,
                         lastSeenAt: wallNow,
+                        trail: [[a.lat, a.lon]],
                     });
                 }
             }
@@ -376,6 +499,7 @@
             const staleAfterMs = Math.max(20000, Number(refreshSeconds) * 1000 * 4);
             for (const [key, state] of aircraftMarkers.entries()) {
                 if (!seenKeys.has(key) && wallNow - state.lastSeenAt > staleAfterMs) {
+                    if (selectedAircraftKey === key) clearSelectionLayers();
                     state.marker.remove();
                     aircraftMarkers.delete(key);
                 }
@@ -623,4 +747,27 @@
         margin-bottom: 4px;
         font-size: 13px;
     }
+
+    :global(.route-block) {
+        margin-top: 7px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(0,0,0,.12);
+    }
+    :global(.route-title) { font-weight: 700; margin-bottom: 2px; }
+    :global(.route-muted) { opacity: .62; }
+    :global(.route-note) { margin-top: 4px; font-size: 10px; opacity: .65; }
+    :global(.destination-airport-icon) { background: transparent !important; border: 0 !important; }
+    :global(.destination-badge) {
+        display: inline-block;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(20,24,31,.92);
+        border: 1px solid rgba(255,255,255,.55);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 750;
+        white-space: nowrap;
+        box-shadow: 0 2px 7px rgba(0,0,0,.35);
+    }
+
 </style>
