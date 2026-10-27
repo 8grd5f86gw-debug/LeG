@@ -3,16 +3,21 @@
 
     <label class="toggle-row">
         <input type="checkbox" bind:checked={enabled} on:change={redraw} />
-        <span>Zone de nuit</span>
+        <span>Zone nuit</span>
     </label>
 
     <label class="toggle-row">
         <input type="checkbox" bind:checked={showTerminator} on:change={redraw} />
-        <span>Ligne jour / nuit</span>
+        <span>Ligne J / N</span>
+    </label>
+
+    <label class="toggle-row">
+        <input type="checkbox" bind:checked={showTwilight} on:change={redraw} />
+        <span>Crépuscules</span>
     </label>
 
     <div class="slider-row">
-        <span>Opacité</span>
+        <span>Opacité nuit</span>
         <strong>{Math.round(Number(opacity) * 100)} %</strong>
     </div>
 
@@ -26,6 +31,15 @@
         on:input={redraw}
     />
 
+    {#if enabled && showTwilight}
+        <div class="legend">
+            <div class="legend-item"><span class="swatch civil"></span> Civil</div>
+            <div class="legend-item"><span class="swatch nautical"></span> Nautique</div>
+            <div class="legend-item"><span class="swatch astro"></span> Astronomique</div>
+            <div class="legend-item"><span class="swatch night"></span> Nuit</div>
+        </div>
+    {/if}
+
     <div class="time">{displayTime}</div>
 </div>
 
@@ -33,11 +47,12 @@
     import { onDestroy, onMount } from 'svelte';
     import { map } from '@windy/map';
     import store from '@windy/store';
-    import { formatUtc, getNightHemisphereRing } from './solar';
+    import { formatUtc, getTwilightRings } from './solar';
 
     let enabled = true;
     let showTerminator = true;
-    let opacity = 0.42;
+    let showTwilight = true;
+    let opacity = 0.40;
     let displayTime = '';
     let layers: L.GeoJSON[] = [];
 
@@ -62,6 +77,22 @@
         },
     });
 
+    const makeBandPolygon = (
+        outerRing: [number, number][],
+        innerRing: [number, number][],
+        lonShift: number,
+    ) => ({
+        type: 'Feature' as const,
+        properties: {},
+        geometry: {
+            type: 'Polygon' as const,
+            coordinates: [
+                outerRing.map(([lon, lat]) => [lon + lonShift, lat]),
+                [...innerRing].reverse().map(([lon, lat]) => [lon + lonShift, lat]),
+            ],
+        },
+    });
+
     const makeLine = (ring: [number, number][], lonShift: number) => ({
         type: 'Feature' as const,
         properties: {},
@@ -71,6 +102,15 @@
         },
     });
 
+    const addLayer = (feature: GeoJSON.Feature, style: any) => {
+        const layer = new L.GeoJSON(feature, {
+            style,
+            interactive: false,
+        });
+        layer.addTo(map);
+        layers.push(layer);
+    };
+
     function redraw() {
         clearLayers();
 
@@ -79,35 +119,60 @@
 
         if (!enabled && !showTerminator) return;
 
-        const ring = getNightHemisphereRing(timestamp);
+        const rings = getTwilightRings(timestamp);
+        const mainOpacity = Number(opacity);
 
         for (const shift of [-360, 0, 360]) {
             if (enabled) {
-                const nightLayer = new L.GeoJSON(makePolygon(ring, shift), {
-                    style: {
+                if (showTwilight) {
+                    addLayer(makeBandPolygon(rings.terminator, rings.civil, shift), {
+                        color: '#000000',
+                        weight: 0,
+                        opacity: 0,
+                        fillColor: '#496d91',
+                        fillOpacity: Math.min(0.14, mainOpacity * 0.32),
+                    });
+
+                    addLayer(makeBandPolygon(rings.civil, rings.nautical, shift), {
+                        color: '#000000',
+                        weight: 0,
+                        opacity: 0,
+                        fillColor: '#2d4c69',
+                        fillOpacity: Math.min(0.22, mainOpacity * 0.55),
+                    });
+
+                    addLayer(makeBandPolygon(rings.nautical, rings.astronomical, shift), {
+                        color: '#000000',
+                        weight: 0,
+                        opacity: 0,
+                        fillColor: '#183149',
+                        fillOpacity: Math.min(0.32, mainOpacity * 0.78),
+                    });
+
+                    addLayer(makePolygon(rings.astronomical, shift), {
                         color: '#05070b',
                         weight: 0,
                         opacity: 0,
                         fillColor: '#05070b',
-                        fillOpacity: Number(opacity),
-                    },
-                    interactive: false,
-                });
-                nightLayer.addTo(map);
-                layers.push(nightLayer);
+                        fillOpacity: mainOpacity,
+                    });
+                } else {
+                    addLayer(makePolygon(rings.terminator, shift), {
+                        color: '#05070b',
+                        weight: 0,
+                        opacity: 0,
+                        fillColor: '#05070b',
+                        fillOpacity: mainOpacity,
+                    });
+                }
             }
 
             if (showTerminator) {
-                const terminatorLayer = new L.GeoJSON(makeLine(ring, shift), {
-                    style: {
-                        color: '#ffffff',
-                        weight: 1.4,
-                        opacity: 0.78,
-                    },
-                    interactive: false,
+                addLayer(makeLine(rings.terminator, shift), {
+                    color: '#ffffff',
+                    weight: 1.2,
+                    opacity: 0.78,
                 });
-                terminatorLayer.addTo(map);
-                layers.push(terminatorLayer);
             }
         }
     }
@@ -128,19 +193,20 @@
 <style lang="less">
     .day-night-panel {
         box-sizing: border-box;
-        width: 240px;
-        padding: 12px 14px;
-        border-radius: 12px;
+        width: 205px;
+        padding: 10px 11px;
+        border-radius: 11px;
         color: #fff;
-        background: rgba(28, 31, 36, 0.9);
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+        background: rgba(28, 31, 36, 0.90);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
         backdrop-filter: blur(8px);
-        font-size: 13px;
+        font-size: 12px;
+        line-height: 1.25;
     }
 
     .day-night-title {
-        margin-bottom: 10px;
-        font-size: 15px;
+        margin-bottom: 8px;
+        font-size: 14px;
         font-weight: 700;
     }
 
@@ -148,24 +214,63 @@
     .slider-row {
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin: 8px 0;
+        gap: 7px;
+        margin: 6px 0;
     }
 
     .slider-row {
         justify-content: space-between;
-        margin-bottom: 3px;
+        margin-bottom: 4px;
     }
 
     .opacity-slider {
         width: 100%;
     }
 
+    .legend {
+        margin-top: 7px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 8px;
+        font-size: 10.5px;
+        opacity: 0.92;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+        flex: 0 0 auto;
+    }
+
+    .civil {
+        background: #496d91;
+    }
+
+    .nautical {
+        background: #2d4c69;
+    }
+
+    .astro {
+        background: #183149;
+    }
+
+    .night {
+        background: #05070b;
+    }
+
     .time {
-        margin-top: 9px;
-        padding-top: 8px;
-        border-top: 1px solid rgba(255, 255, 255, 0.14);
+        margin-top: 7px;
+        padding-top: 7px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
         opacity: 0.8;
-        font-size: 11px;
+        font-size: 10px;
     }
 </style>
