@@ -1,6 +1,6 @@
 {
   "name": "windy-plugin-day-night-leg",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Windy.com plugin displaying day/night twilight and live ADS-B air traffic.",
   "main": "dist/plugin.min.js",
   "type": "module",
