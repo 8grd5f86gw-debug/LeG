@@ -1,0 +1,6 @@
+windy-plugin-day-night/
+├── README_FR.md
+└── src/
+    ├── plugin.svelte
+    ├── pluginConfig.ts
+    └── solar.ts
