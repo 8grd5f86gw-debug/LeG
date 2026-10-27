@@ -12,9 +12,12 @@ export type SunPoint = {
 };
 
 export type TwilightRings = {
-    terminator: [number, number][];
+    horizon: [number, number][];
+    minus3: [number, number][];
     civil: [number, number][];
+    minus9: [number, number][];
     nautical: [number, number][];
+    minus15: [number, number][];
     astronomical: [number, number][];
 };
 
@@ -50,7 +53,7 @@ function getRingFromCenter(
     centerLatDeg: number,
     centerLonDeg: number,
     angularRadiusDeg: number,
-    steps = 240,
+    steps = 300,
 ): [number, number][] {
     const lat1 = centerLatDeg * DEG;
     const lon1 = centerLonDeg * DEG;
@@ -87,21 +90,24 @@ function getRingFromCenter(
     return points;
 }
 
-export function getTwilightRings(timestampMs: number, steps = 240): TwilightRings {
+export function getTwilightRings(timestampMs: number, steps = 300): TwilightRings {
     const sun = getSunPoint(timestampMs);
+    const ring = (sunAltitudeDeg: number) =>
+        getRingFromCenter(
+            sun.antisolarLat,
+            sun.antisolarLon,
+            90 + sunAltitudeDeg,
+            steps,
+        );
 
     return {
-        // soleil à l’horizon
-        terminator: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 90, steps),
-
-        // soleil entre 0° et -6°
-        civil: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 84, steps),
-
-        // soleil entre -6° et -12°
-        nautical: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 78, steps),
-
-        // soleil entre -12° et -18°
-        astronomical: getRingFromCenter(sun.antisolarLat, sun.antisolarLon, 72, steps),
+        horizon: ring(0),
+        minus3: ring(-3),
+        civil: ring(-6),
+        minus9: ring(-9),
+        nautical: ring(-12),
+        minus15: ring(-15),
+        astronomical: ring(-18),
     };
 }
 

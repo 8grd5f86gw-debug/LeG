@@ -1,46 +1,55 @@
-<div class="day-night-panel">
-    <div class="day-night-title">🌗 Jour / Nuit</div>
-
-    <label class="toggle-row">
-        <input type="checkbox" bind:checked={enabled} on:change={redraw} />
-        <span>Zone nuit</span>
-    </label>
-
-    <label class="toggle-row">
-        <input type="checkbox" bind:checked={showTerminator} on:change={redraw} />
-        <span>Ligne J / N</span>
-    </label>
-
-    <label class="toggle-row">
-        <input type="checkbox" bind:checked={showTwilight} on:change={redraw} />
-        <span>Crépuscules</span>
-    </label>
-
-    <div class="slider-row">
-        <span>Opacité nuit</span>
-        <strong>{Math.round(Number(opacity) * 100)} %</strong>
+<div class:collapsed class="day-night-panel">
+    <div class="header-row">
+        <div class="day-night-title">🌗 Jour / Nuit</div>
+        <button class="collapse-btn" on:click={() => (collapsed = !collapsed)} aria-label="Réduire le panneau">
+            {collapsed ? '▾' : '▴'}
+        </button>
     </div>
 
-    <input
-        class="opacity-slider"
-        type="range"
-        min="0.10"
-        max="0.75"
-        step="0.05"
-        bind:value={opacity}
-        on:input={redraw}
-    />
+    {#if !collapsed}
+        <div class="controls-grid">
+            <label class="toggle-row">
+                <input type="checkbox" bind:checked={enabled} on:change={redraw} />
+                <span>Nuit</span>
+            </label>
 
-    {#if enabled && showTwilight}
-        <div class="legend">
-            <div class="legend-item"><span class="swatch civil"></span> Civil</div>
-            <div class="legend-item"><span class="swatch nautical"></span> Nautique</div>
-            <div class="legend-item"><span class="swatch astro"></span> Astronomique</div>
-            <div class="legend-item"><span class="swatch night"></span> Nuit</div>
+            <label class="toggle-row">
+                <input type="checkbox" bind:checked={showTwilight} on:change={redraw} />
+                <span>Crépuscules</span>
+            </label>
+
+            <label class="toggle-row wide">
+                <input type="checkbox" bind:checked={showTerminator} on:change={redraw} />
+                <span>Terminateur</span>
+            </label>
         </div>
-    {/if}
 
-    <div class="time">{displayTime}</div>
+        <div class="slider-row">
+            <span>Opacité</span>
+            <strong>{Math.round(Number(opacity) * 100)}%</strong>
+        </div>
+
+        <input
+            class="opacity-slider"
+            type="range"
+            min="0.15"
+            max="0.70"
+            step="0.05"
+            bind:value={opacity}
+            on:input={redraw}
+        />
+
+        {#if enabled && showTwilight}
+            <div class="legend">
+                <div><span class="dot civil"></span>Civil</div>
+                <div><span class="dot nautical"></span>Nautique</div>
+                <div><span class="dot astro"></span>Astro.</div>
+                <div><span class="dot night"></span>Nuit</div>
+            </div>
+        {/if}
+
+        <div class="time">{displayTime}</div>
+    {/if}
 </div>
 
 <script lang="ts">
@@ -52,14 +61,13 @@
     let enabled = true;
     let showTerminator = true;
     let showTwilight = true;
-    let opacity = 0.40;
+    let opacity = 0.42;
+    let collapsed = false;
     let displayTime = '';
     let layers: L.GeoJSON[] = [];
 
     const clearLayers = () => {
-        for (const layer of layers) {
-            layer.remove();
-        }
+        for (const layer of layers) layer.remove();
         layers = [];
     };
 
@@ -68,16 +76,19 @@
         return typeof value === 'number' ? value : Date.now();
     };
 
+    const shiftRing = (ring: [number, number][], lonShift: number) =>
+        ring.map(([lon, lat]) => [lon + lonShift, lat]);
+
     const makePolygon = (ring: [number, number][], lonShift: number) => ({
         type: 'Feature' as const,
         properties: {},
         geometry: {
             type: 'Polygon' as const,
-            coordinates: [ring.map(([lon, lat]) => [lon + lonShift, lat])],
+            coordinates: [shiftRing(ring, lonShift)],
         },
     });
 
-    const makeBandPolygon = (
+    const makeBand = (
         outerRing: [number, number][],
         innerRing: [number, number][],
         lonShift: number,
@@ -87,8 +98,8 @@
         geometry: {
             type: 'Polygon' as const,
             coordinates: [
-                outerRing.map(([lon, lat]) => [lon + lonShift, lat]),
-                [...innerRing].reverse().map(([lon, lat]) => [lon + lonShift, lat]),
+                shiftRing(outerRing, lonShift),
+                shiftRing([...innerRing].reverse(), lonShift),
             ],
         },
     });
@@ -98,15 +109,12 @@
         properties: {},
         geometry: {
             type: 'LineString' as const,
-            coordinates: ring.map(([lon, lat]) => [lon + lonShift, lat]),
+            coordinates: shiftRing(ring, lonShift),
         },
     });
 
-    const addLayer = (feature: GeoJSON.Feature, style: any) => {
-        const layer = new L.GeoJSON(feature, {
-            style,
-            interactive: false,
-        });
+    const addLayer = (feature: any, style: any) => {
+        const layer = new L.GeoJSON(feature, { style, interactive: false });
         layer.addTo(map);
         layers.push(layer);
     };
@@ -120,58 +128,54 @@
         if (!enabled && !showTerminator) return;
 
         const rings = getTwilightRings(timestamp);
-        const mainOpacity = Number(opacity);
+        const o = Number(opacity);
 
         for (const shift of [-360, 0, 360]) {
             if (enabled) {
                 if (showTwilight) {
-                    addLayer(makeBandPolygon(rings.terminator, rings.civil, shift), {
-                        color: '#000000',
-                        weight: 0,
-                        opacity: 0,
-                        fillColor: '#496d91',
-                        fillOpacity: Math.min(0.14, mainOpacity * 0.32),
-                    });
+                    const bands = [
+                        [rings.horizon, rings.minus3, '#507aa1', Math.min(0.09, o * 0.20)],
+                        [rings.minus3, rings.civil, '#416786', Math.min(0.14, o * 0.32)],
+                        [rings.civil, rings.minus9, '#32536e', Math.min(0.20, o * 0.46)],
+                        [rings.minus9, rings.nautical, '#263f58', Math.min(0.27, o * 0.60)],
+                        [rings.nautical, rings.minus15, '#1a3048', Math.min(0.34, o * 0.78)],
+                        [rings.minus15, rings.astronomical, '#11243a', Math.min(0.40, o * 0.90)],
+                    ] as const;
 
-                    addLayer(makeBandPolygon(rings.civil, rings.nautical, shift), {
-                        color: '#000000',
-                        weight: 0,
-                        opacity: 0,
-                        fillColor: '#2d4c69',
-                        fillOpacity: Math.min(0.22, mainOpacity * 0.55),
-                    });
-
-                    addLayer(makeBandPolygon(rings.nautical, rings.astronomical, shift), {
-                        color: '#000000',
-                        weight: 0,
-                        opacity: 0,
-                        fillColor: '#183149',
-                        fillOpacity: Math.min(0.32, mainOpacity * 0.78),
-                    });
+                    for (const [outer, inner, color, fillOpacity] of bands) {
+                        addLayer(makeBand(outer, inner, shift), {
+                            color,
+                            weight: 0,
+                            opacity: 0,
+                            fillColor: color,
+                            fillOpacity,
+                        });
+                    }
 
                     addLayer(makePolygon(rings.astronomical, shift), {
-                        color: '#05070b',
+                        color: '#06090f',
                         weight: 0,
                         opacity: 0,
-                        fillColor: '#05070b',
-                        fillOpacity: mainOpacity,
+                        fillColor: '#06090f',
+                        fillOpacity: o,
                     });
                 } else {
-                    addLayer(makePolygon(rings.terminator, shift), {
-                        color: '#05070b',
+                    addLayer(makePolygon(rings.horizon, shift), {
+                        color: '#06090f',
                         weight: 0,
                         opacity: 0,
-                        fillColor: '#05070b',
-                        fillOpacity: mainOpacity,
+                        fillColor: '#06090f',
+                        fillOpacity: o,
                     });
                 }
             }
 
             if (showTerminator) {
-                addLayer(makeLine(rings.terminator, shift), {
+                addLayer(makeLine(rings.horizon, shift), {
                     color: '#ffffff',
-                    weight: 1.2,
-                    opacity: 0.78,
+                    weight: 1.05,
+                    opacity: 0.70,
+                    dashArray: '4 4',
                 });
             }
         }
@@ -193,84 +197,118 @@
 <style lang="less">
     .day-night-panel {
         box-sizing: border-box;
-        width: 205px;
-        padding: 10px 11px;
-        border-radius: 11px;
+        width: 188px;
+        padding: 9px 10px;
+        border-radius: 10px;
         color: #fff;
-        background: rgba(28, 31, 36, 0.90);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+        background: rgba(26, 29, 34, 0.90);
+        box-shadow: 0 3px 14px rgba(0, 0, 0, 0.24);
         backdrop-filter: blur(8px);
-        font-size: 12px;
-        line-height: 1.25;
+        font-size: 11.5px;
+        line-height: 1.2;
+        transition: width 0.15s ease, padding 0.15s ease;
+    }
+
+    .day-night-panel.collapsed {
+        width: 145px;
+        padding: 8px 10px;
+    }
+
+    .header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
     }
 
     .day-night-title {
-        margin-bottom: 8px;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 700;
+        white-space: nowrap;
     }
 
-    .toggle-row,
-    .slider-row {
+    .collapse-btn {
+        border: 0;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.72);
+        padding: 0 2px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .controls-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px 8px;
+        margin-top: 8px;
+    }
+
+    .toggle-row {
         display: flex;
         align-items: center;
-        gap: 7px;
-        margin: 6px 0;
+        gap: 5px;
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    .toggle-row.wide {
+        grid-column: 1 / -1;
+    }
+
+    .toggle-row input {
+        margin: 0;
+        transform: scale(0.90);
     }
 
     .slider-row {
+        display: flex;
         justify-content: space-between;
-        margin-bottom: 4px;
+        align-items: center;
+        margin-top: 8px;
+        margin-bottom: 2px;
+        font-size: 10.5px;
     }
 
     .opacity-slider {
         width: 100%;
+        height: 13px;
+        margin: 0;
     }
 
     .legend {
-        margin-top: 7px;
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 4px 8px;
-        font-size: 10.5px;
-        opacity: 0.92;
+        gap: 3px 7px;
+        margin-top: 6px;
+        font-size: 9.5px;
+        color: rgba(255, 255, 255, 0.80);
     }
 
-    .legend-item {
+    .legend > div {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
     }
 
-    .swatch {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
+    .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
         display: inline-block;
         flex: 0 0 auto;
     }
 
-    .civil {
-        background: #496d91;
-    }
-
-    .nautical {
-        background: #2d4c69;
-    }
-
-    .astro {
-        background: #183149;
-    }
-
-    .night {
-        background: #05070b;
-    }
+    .civil { background: #416786; }
+    .nautical { background: #263f58; }
+    .astro { background: #11243a; }
+    .night { background: #06090f; }
 
     .time {
-        margin-top: 7px;
-        padding-top: 7px;
-        border-top: 1px solid rgba(255, 255, 255, 0.12);
-        opacity: 0.8;
-        font-size: 10px;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.11);
+        color: rgba(255, 255, 255, 0.58);
+        font-size: 9.5px;
+        white-space: nowrap;
     }
 </style>
