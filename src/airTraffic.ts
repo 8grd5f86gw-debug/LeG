@@ -52,7 +52,7 @@ export async function fetchAircraft(
     signal?: AbortSignal,
 ): Promise<Aircraft[]> {
     const radius = Math.max(5, Math.min(250, Math.round(radiusNm)));
-    const url = `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/${radius}`;
+    const ADSB_PROXY_BASE = 'https://windy-adsb-proxy.4smmhrd2kk.workers.dev';
 
     const response = await fetch(url, {
         method: 'GET',
