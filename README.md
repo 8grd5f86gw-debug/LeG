@@ -1,63 +1,13 @@
-# Windy Day / Night plugin
+# Windy Météo & Vols — v0.7
 
-Plugin Windy.com qui affiche :
+Cette version conserve les popups ouvertes pendant les rafraîchissements ADS-B et interpole les positions des avions entre deux relevés.
 
-- la zone de nuit avec une transparence réglable ;
-- la ligne du terminateur solaire ;
-- une synchronisation avec le `timestamp` de la timeline Windy.
+## Changements
+- popup avion persistante pendant les refresh
+- mise à jour du contenu de la popup sans la fermer
+- interpolation fluide des positions et du cap
+- suppression de la ligne « Palier couleur » dans la popup
+- conservation des couleurs d'altitude sur les icônes
+- tolérance aux avions absents d'un seul refresh avant suppression
 
-## Développement local
-
-Prérequis : Node.js récent.
-
-```bash
-npm install
-npm start
-```
-
-Puis ouvrir :
-
-`https://www.windy.com/developer-mode`
-
-et charger :
-
-`https://localhost:9999/plugin.js`
-
-## Compilation
-
-```bash
-npm run build
-```
-
-Les fichiers sont produits dans `dist/`.
-
-## GitHub Pages
-
-Le workflow `.github/workflows/deploy-pages.yml` compile et publie automatiquement le plugin à chaque push sur `main`.
-
-Dans GitHub, activer une seule fois :
-
-**Settings → Pages → Build and deployment → Source → GitHub Actions**
-
-URL attendue pour ce dépôt :
-
-`https://8grd5f86gw-debug.github.io/LeG/plugin.js`
-
-Version minifiée :
-
-`https://8grd5f86gw-debug.github.io/LeG/plugin.min.js`
-
-## Structure
-
-```text
-.
-├── .github/workflows/deploy-pages.yml
-├── src/
-│   ├── plugin.svelte
-│   ├── pluginConfig.ts
-│   └── solar.ts
-├── package.json
-├── rollup.config.js
-├── svelte.config.js
-└── tsconfig.json
-```
+Le proxy Cloudflare configuré reste : `https://windy-adsb-proxy.4smmhrd2kk.workers.dev`

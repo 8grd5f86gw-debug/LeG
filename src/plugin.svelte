@@ -81,24 +81,6 @@
                             </div>
                         </div>
 
-                        <button class="legend-toggle" on:click={() => (showAltitudeLegend = !showAltitudeLegend)}>
-                            <span>Couleurs d'altitude</span>
-                            <span>{showAltitudeLegend ? '−' : '+'}</span>
-                        </button>
-
-                        {#if showAltitudeLegend}
-                            <div class="altitude-legend">
-                                <span><i style="background:#6ee7b7"></i>0–2.5k</span>
-                                <span><i style="background:#22c55e"></i>2.5–5k</span>
-                                <span><i style="background:#38bdf8"></i>5–10k</span>
-                                <span><i style="background:#2563eb"></i>10–20k</span>
-                                <span><i style="background:#a78bfa"></i>20–30k</span>
-                                <span><i style="background:#f59e0b"></i>30–40k</span>
-                                <span><i style="background:#ef4444"></i>40–50k</span>
-                                <span><i style="background:#ec4899"></i>50k+</span>
-                            </div>
-                        {/if}
-
                         <div class="hint">Le mode 2 s est plus réactif mais sollicite davantage la source ADS-B.</div>
                         <a class="attribution" href="https://adsb.lol/" target="_blank" rel="noreferrer">Données ADS-B : adsb.lol</a>
                     {:else}
@@ -115,7 +97,7 @@
     import { map } from '@windy/map';
     import store from '@windy/store';
     import { formatUtc, getTwilightRings } from './solar';
-    import { altitudeBandLabel, altitudeColor, fetchAircraft, ktToKmh, type Aircraft } from './airTraffic';
+    import { altitudeColor, fetchAircraft, ktToKmh, type Aircraft } from './airTraffic';
 
     let enabled = true;
     let showTerminator = true;
@@ -126,7 +108,6 @@
     let displayTime = '';
 
     let showAircraft = true;
-    let showAltitudeLegend = false;
     let aircraftStatus: 'idle' | 'loading' | 'ok' | 'error' = 'idle';
     let aircraftStatusText = 'Prêt';
     let aircraftRadiusNm = 100;
@@ -135,7 +116,22 @@
     let aircraftAbort: AbortController | null = null;
 
     let layers: L.GeoJSON[] = [];
-    let aircraftLayers: L.Marker[] = [];
+    type AircraftMarkerState = {
+        marker: L.Marker;
+        data: Aircraft;
+        fromLat: number;
+        fromLon: number;
+        toLat: number;
+        toLon: number;
+        fromTrack: number;
+        toTrack: number;
+        startedAt: number;
+        durationMs: number;
+        lastSeenAt: number;
+    };
+
+    const aircraftMarkers = new Map<string, AircraftMarkerState>();
+    let animationFrame: number | null = null;
 
     const clearLayers = () => {
         for (const layer of layers) layer.remove();
@@ -143,8 +139,27 @@
     };
 
     const clearAircraft = () => {
-        for (const marker of aircraftLayers) marker.remove();
-        aircraftLayers = [];
+        for (const state of aircraftMarkers.values()) state.marker.remove();
+        aircraftMarkers.clear();
+    };
+
+    const aircraftKey = (a: Aircraft) => a.hex || a.callsign;
+
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const lerpLon = (a: number, b: number, t: number) => {
+        let delta = b - a;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        let lon = a + delta * t;
+        if (lon > 180) lon -= 360;
+        if (lon < -180) lon += 360;
+        return lon;
+    };
+
+    const lerpAngle = (a: number, b: number, t: number) => {
+        let delta = ((b - a + 540) % 360) - 180;
+        return (a + delta * t + 360) % 360;
     };
 
     const getTimestamp = (): number => {
@@ -261,8 +276,38 @@
         const vr = a.verticalRateFpm === undefined ? '' : `<div>Vertical : ${Math.round(a.verticalRateFpm)} ft/min</div>`;
         const reg = a.registration ? `<div>Immat. : ${a.registration}</div>` : '';
         const type = a.type ? `<div>Type : ${a.type}</div>` : '';
-        const band = altitudeBandLabel(a.altitudeFt);
-        return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Palier couleur : ${band}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}</div>`;
+        return `<div class="windy-aircraft-popup"><strong>${a.callsign}</strong>${reg}${type}<div>Altitude : ${alt}</div><div>Vitesse : ${speed}</div><div>Cap : ${track}</div>${vr}</div>`;
+    }
+
+    function updateMarkerVisual(state: AircraftMarkerState, track: number) {
+        const el = state.marker.getElement();
+        if (!el) return;
+        const rotator = el.querySelector('.aircraft-rotator') as HTMLElement | null;
+        if (rotator) rotator.style.transform = `rotate(${track}deg)`;
+        const path = el.querySelector('.aircraft-svg path') as SVGPathElement | null;
+        if (path) path.setAttribute('fill', altitudeColor(state.data.altitudeFt));
+    }
+
+    function ensureAnimationLoop() {
+        if (animationFrame !== null) return;
+
+        const tick = (now: number) => {
+            animationFrame = null;
+            if (!showAircraft || aircraftMarkers.size === 0) return;
+
+            for (const state of aircraftMarkers.values()) {
+                const t = Math.max(0, Math.min(1, (now - state.startedAt) / state.durationMs));
+                const lat = lerp(state.fromLat, state.toLat, t);
+                const lon = lerpLon(state.fromLon, state.toLon, t);
+                const track = lerpAngle(state.fromTrack, state.toTrack, t);
+                state.marker.setLatLng([lat, lon]);
+                updateMarkerVisual(state, track);
+            }
+
+            animationFrame = requestAnimationFrame(tick);
+        };
+
+        animationFrame = requestAnimationFrame(tick);
     }
 
     async function refreshAircraft() {
@@ -277,18 +322,66 @@
 
         try {
             const aircraft = await fetchAircraft(center.lat, center.lng, aircraftRadiusNm, aircraftAbort.signal);
-            clearAircraft();
+            const now = performance.now();
+            const wallNow = Date.now();
+            const seenKeys = new Set<string>();
+            const durationMs = Math.max(900, Number(refreshSeconds) * 1000 * 0.92);
+
             for (const a of aircraft) {
-                const marker = L.marker([a.lat, a.lon], {
-                    icon: aircraftIcon(a),
-                    keyboard: false,
-                    riseOnHover: true,
-                    zIndexOffset: 900,
-                });
-                marker.bindPopup(popupHtml(a), { maxWidth: 230 });
-                marker.addTo(map);
-                aircraftLayers.push(marker);
+                const key = aircraftKey(a);
+                if (!key) continue;
+                seenKeys.add(key);
+
+                const existing = aircraftMarkers.get(key);
+                if (existing) {
+                    const current = existing.marker.getLatLng();
+                    existing.fromLat = current.lat;
+                    existing.fromLon = current.lng;
+                    existing.toLat = a.lat;
+                    existing.toLon = a.lon;
+                    existing.fromTrack = existing.toTrack;
+                    existing.toTrack = a.trackDeg ?? existing.toTrack;
+                    existing.startedAt = now;
+                    existing.durationMs = durationMs;
+                    existing.lastSeenAt = wallNow;
+                    existing.data = a;
+                    existing.marker.setPopupContent(popupHtml(a));
+                    updateMarkerVisual(existing, existing.fromTrack);
+                } else {
+                    const marker = L.marker([a.lat, a.lon], {
+                        icon: aircraftIcon(a),
+                        keyboard: false,
+                        riseOnHover: true,
+                        zIndexOffset: 900,
+                    });
+                    marker.bindPopup(popupHtml(a), { maxWidth: 230, autoPan: true });
+                    marker.addTo(map);
+                    aircraftMarkers.set(key, {
+                        marker,
+                        data: a,
+                        fromLat: a.lat,
+                        fromLon: a.lon,
+                        toLat: a.lat,
+                        toLon: a.lon,
+                        fromTrack: a.trackDeg ?? 0,
+                        toTrack: a.trackDeg ?? 0,
+                        startedAt: now,
+                        durationMs,
+                        lastSeenAt: wallNow,
+                    });
+                }
             }
+
+            // Keep temporarily missing aircraft so an open popup is not destroyed by one missed ADS-B refresh.
+            const staleAfterMs = Math.max(20000, Number(refreshSeconds) * 1000 * 4);
+            for (const [key, state] of aircraftMarkers.entries()) {
+                if (!seenKeys.has(key) && wallNow - state.lastSeenAt > staleAfterMs) {
+                    state.marker.remove();
+                    aircraftMarkers.delete(key);
+                }
+            }
+
+            ensureAnimationLoop();
             aircraftStatus = 'ok';
             aircraftStatusText = `${aircraft.length} avion${aircraft.length > 1 ? 's' : ''}`;
         } catch (error: any) {
@@ -320,6 +413,8 @@
             if (aircraftTimer) clearInterval(aircraftTimer);
             aircraftTimer = null;
             clearAircraft();
+            if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+            animationFrame = null;
             aircraftStatus = 'idle';
             aircraftStatusText = 'Prêt';
         }
@@ -341,6 +436,8 @@
     onDestroy(() => {
         clearLayers();
         clearAircraft();
+        if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+        animationFrame = null;
         aircraftAbort?.abort();
         if (aircraftTimer) clearInterval(aircraftTimer);
         store.off('timestamp', handleTimestamp);
@@ -447,108 +544,6 @@
     .setting-row,
     .traffic-head,
     .status-card,
-    .legend-toggle {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-    }
-
-    .opacity-row { margin-top: 11px; }
-    .opacity-slider { width: 100%; height: 13px; margin-top: 3px; }
-
-    .twilight-legend {
-        margin-top: 9px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 5px 8px;
-        color: rgba(255,255,255,.72);
-        font-size: 9.5px;
-    }
-
-    .twilight-legend span { display: flex; align-items: center; gap: 5px; }
-    .tw { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .tw.civil { background:#416786; }
-    .tw.nautical { background:#263f58; }
-    .tw.astro { background:#11243a; }
-    .tw.night { background:#06090f; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
-
-    .footer-info {
-        margin-top: 9px;
-        padding-top: 7px;
-        border-top: 1px solid rgba(255,255,255,.09);
-        color: rgba(255,255,255,.55);
-        font-size: 9.5px;
-    }
-
-    .traffic-head { align-items: flex-start; }
-    .section-title { font-weight: 750; font-size: 12.5px; }
-    .subtle { margin-top: 2px; color: rgba(255,255,255,.55); font-size: 9.5px; }
-
-    .status-card {
-        margin-top: 10px;
-        min-height: 30px;
-        padding: 0 7px;
-        border-radius: 8px;
-        background: rgba(255,255,255,.055);
-        border: 1px solid rgba(255,255,255,.06);
-    }
-
-    .status-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: #f59e0b;
-        flex: 0 0 auto;
-    }
-
-    .status-ok .status-dot { background: #22c55e; }
-    .status-error .status-dot { background: #ef4444; }
-    .status-text { flex: 1; min-width: 0; font-size: 10.5px; }
-    .status-error .status-text { color: #ff9b9b; }
-    .refresh-btn { font-size: 15px; }
-
-    .settings-box {
-        margin-top: 8px;
-        padding: 7px 8px;
-        border-radius: 8px;
-        background: rgba(0,0,0,.13);
-    }
-
-    .settings-box .setting-row + .setting-row { margin-top: 7px; }
-
-    select {
-        max-width: 74px;
-        border: 1px solid rgba(255,255,255,.16);
-        background: rgba(255,255,255,.08);
-        color: #fff;
-        border-radius: 6px;
-        padding: 3px 5px;
-        font: inherit;
-    }
-
-    .legend-toggle {
-        width: 100%;
-        margin-top: 8px;
-        padding: 5px 0 3px;
-        border: 0;
-        background: transparent;
-        color: rgba(255,255,255,.78);
-        font: inherit;
-        cursor: pointer;
-    }
-
-    .altitude-legend {
-        margin-top: 4px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 5px 7px;
-        color: rgba(255,255,255,.68);
-        font-size: 9px;
-    }
-
-    .altitude-legend span { display: flex; align-items: center; gap: 5px; }
-    .altitude-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 
     .hint,
     .disabled-note {
