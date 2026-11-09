@@ -86,6 +86,20 @@ export async function fetchAircraft(
         .slice(0, 500);
 }
 
+/** Recherche mondiale par indicatif (un seul appel manuel au proxy). */
+export async function fetchAircraftByFlight(flight: string, signal?: AbortSignal): Promise<Aircraft[]> {
+    const input = flight.trim().toUpperCase().replace(/\s+/g, '');
+    const response = await fetch(`${ADSB_PROXY_BASE}/search?flight=${encodeURIComponent(input)}`, {
+        method: 'GET', signal, headers: { Accept: 'application/json' }, cache: 'no-store',
+    });
+    if (!response.ok) throw new Error(`ADS-B Search HTTP ${response.status}`);
+    const data = await response.json();
+    const list = Array.isArray(data?.ac) ? data.ac : [];
+    return list.map(normalizeAircraft)
+        .filter((a: Aircraft | null): a is Aircraft => Boolean(a))
+        .filter((a) => a.seenPos === undefined || a.seenPos <= 60);
+}
+
 function normalizeAirport(raw: any): Airport | undefined {
     if (!raw) return undefined;
     const lat = finiteNumber(raw.latitude ?? raw.lat);

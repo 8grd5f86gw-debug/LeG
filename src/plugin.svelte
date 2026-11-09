@@ -59,6 +59,25 @@
                         <button class="mini-action" on:click={refreshAircraft} title="Actualiser maintenant">↻</button>
                     </div>
 
+                    <form class="flight-search" on:submit|preventDefault={searchFlight}>
+                        <input
+                            class="flight-search-input"
+                            type="text"
+                            bind:value={flightQuery}
+                            placeholder="AF898, AFR898…"
+                            maxlength="12"
+                            autocomplete="off"
+                            spellcheck="false"
+                            aria-label="Numéro ou indicatif de vol"
+                        />
+                        <button class="flight-search-btn" type="submit" disabled={searchingFlight || !flightQuery.trim()} aria-label="Rechercher le vol">
+                            {searchingFlight ? '…' : '⌕'}
+                        </button>
+                    </form>
+                    {#if flightSearchMessage}
+                        <div class:error={flightSearchError} class="flight-search-feedback">{flightSearchMessage}</div>
+                    {/if}
+
                     {#if showAircraft}
                         <div class="traffic-badges">
                             <div class:ok={aircraftStatus === 'ok'} class:error={aircraftStatus === 'error'} class="badge status-badge">
@@ -140,7 +159,7 @@
     import { map } from '@windy/map';
     import store from '@windy/store';
     import { formatUtc, getTwilightRings } from './solar';
-    import { altitudeColor, fetchAircraft, fetchFlightRoute, ktToKmh, type Aircraft, type FlightRoute } from './airTraffic';
+    import { altitudeColor, fetchAircraft, fetchAircraftByFlight, fetchFlightRoute, ktToKmh, type Aircraft, type FlightRoute } from './airTraffic';
 
     // Monte la fiche hors de la fenêtre du plugin : un panneau réellement indépendant.
     function portal(node: HTMLElement) {
@@ -161,6 +180,11 @@
     let aircraftStatusText = 'Prêt';
     let aircraftRadiusNm = 100;
     let refreshSeconds = 5;
+    let flightQuery = '';
+    let searchingFlight = false;
+    let flightSearchMessage = '';
+    let flightSearchError = false;
+    let searchAbort: AbortController | null = null;
     let aircraftTimer: ReturnType<typeof setInterval> | null = null;
     let aircraftAbort: AbortController | null = null;
 
@@ -370,6 +394,79 @@
         }
     }
 
+    // Recherche mondiale ponctuelle : elle ne dépend pas du rayon de la carte.
+    async function searchFlight() {
+        const query = flightQuery.trim().toUpperCase().replace(/\s+/g, '');
+        if (!query || searchingFlight) return;
+        if (!/^[A-Z0-9]{2,12}$/.test(query)) {
+            flightSearchError = true;
+            flightSearchMessage = 'Indicatif invalide';
+            return;
+        }
+        searchAbort?.abort();
+        searchAbort = new AbortController();
+        searchingFlight = true;
+        flightSearchMessage = 'Recherche…';
+        flightSearchError = false;
+        try {
+            const matches = await fetchAircraftByFlight(query, searchAbort.signal);
+            if (!matches.length) {
+                flightSearchError = true;
+                flightSearchMessage = 'Aucun avion en vol trouvé';
+                return;
+            }
+            // En présence de plusieurs réponses, privilégier la position la plus fraîche.
+            const a = matches.sort((x, y) => (x.seenPos ?? 0) - (y.seenPos ?? 0))[0];
+            const key = aircraftKey(a);
+            if (!key) throw new Error('Identifiant avion manquant');
+            if (!showAircraft) {
+                showAircraft = true;
+                startAircraftTimer();
+            }
+            const now = performance.now();
+            const wallNow = Date.now();
+            const existing = aircraftMarkers.get(key);
+            if (existing) {
+                existing.data = a;
+                existing.fromLat = a.lat;
+                existing.fromLon = a.lon;
+                existing.toLat = a.lat;
+                existing.toLon = a.lon;
+                existing.fromTrack = a.trackDeg ?? 0;
+                existing.toTrack = a.trackDeg ?? 0;
+                existing.startedAt = now;
+                existing.lastSeenAt = wallNow;
+                existing.marker.setLatLng([a.lat, a.lon]);
+                updateMarkerVisual(existing, a.trackDeg ?? 0);
+            } else {
+                const marker = L.marker([a.lat, a.lon], {
+                    icon: aircraftIcon(a), keyboard: false, riseOnHover: true, zIndexOffset: 900,
+                }).addTo(map);
+                marker.on('click', () => selectAircraft(key));
+                aircraftMarkers.set(key, {
+                    marker, data: a, fromLat: a.lat, fromLon: a.lon,
+                    toLat: a.lat, toLon: a.lon,
+                    fromTrack: a.trackDeg ?? 0, toTrack: a.trackDeg ?? 0,
+                    startedAt: now, durationMs: Number(refreshSeconds) * 1000,
+                    lastSeenAt: wallNow, trail: [[a.lat, a.lon]],
+                });
+            }
+            collapsed = false;
+            activeTab = 'traffic';
+            void selectAircraft(key);
+            // Conserver le zoom s'il est déjà suffisamment proche.
+            map.setView([a.lat, a.lon], Math.max(map.getZoom(), 7));
+            ensureAnimationLoop();
+            flightSearchMessage = matches.length > 1 ? `${matches.length} avions trouvés · ${a.callsign}` : `✈ ${a.callsign} localisé`;
+        } catch (error: any) {
+            if (error?.name === 'AbortError') return;
+            flightSearchError = true;
+            flightSearchMessage = error?.message?.includes('404') ? 'Recherche indisponible : vérifier le Worker' : 'Recherche indisponible';
+        } finally {
+            searchingFlight = false;
+        }
+    }
+
     async function selectAircraft(key: string) {
         const state = aircraftMarkers.get(key);
         if (!state) return;
@@ -494,8 +591,7 @@
 
             const staleAfterMs = Math.max(20000, Number(refreshSeconds) * 1000 * 4);
             for (const [key, state] of aircraftMarkers.entries()) {
-                if (!seenKeys.has(key) && wallNow - state.lastSeenAt > staleAfterMs) {
-                    if (selectedAircraftKey === key) clearSelectionLayers();
+                if (!seenKeys.has(key) && wallNow - state.lastSeenAt > staleAfterMs && selectedAircraftKey !== key) {
                     state.marker.remove();
                     aircraftMarkers.delete(key);
                 }
@@ -552,6 +648,7 @@
         if (animationFrame !== null) cancelAnimationFrame(animationFrame);
         animationFrame = null;
         aircraftAbort?.abort();
+        searchAbort?.abort();
         if (aircraftTimer) clearInterval(aircraftTimer);
         store.off('timestamp', handleTimestamp);
         map.off('moveend', handleMapMove);
@@ -728,4 +825,41 @@
         }
     }
 
+
+    .flight-search {
+        display: flex;
+        gap: 6px;
+        margin: 10px 0 2px;
+        padding: 5px;
+        background: rgba(255,255,255,.075);
+        border: 1px solid rgba(255,255,255,.15);
+        border-radius: 10px;
+    }
+    .flight-search-input {
+        box-sizing: border-box;
+        flex: 1;
+        width: 0;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: #fff;
+        padding: 5px 6px;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+    .flight-search-input::placeholder { color: rgba(255,255,255,.52); text-transform: none; }
+    .flight-search-btn {
+        border: 0;
+        border-radius: 7px;
+        padding: 2px 12px;
+        background: #437de0;
+        color: #fff;
+        font-size: 20px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .flight-search-btn:disabled { opacity: .5; cursor: default; }
+    .flight-search-feedback { margin: 6px 2px 2px; font-size: 10.5px; color: #86efac; }
+    .flight-search-feedback.error { color: #ff9aa0; }
 </style>

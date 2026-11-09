@@ -45,6 +45,43 @@ async function handleRequest(request) {
     }
   }
 
+  if (url.pathname === '/search') {
+    const input = (url.searchParams.get('flight') || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!/^[A-Z0-9]{2,12}$/.test(input)) return jsonResponse({ error: 'Invalid flight' }, 400);
+
+    // Les numéros commerciaux IATA peuvent être différents du callsign ADS-B ICAO.
+    // Exemple : AF898 -> AFR898 (Air France).
+    const airlineMap = {
+      AF: 'AFR', BA: 'BAW', LH: 'DLH', KL: 'KLM', U2: 'EZY',
+      FR: 'RYR', IB: 'IBE', VY: 'VLG', TO: 'TVF',
+      DL: 'DAL', AA: 'AAL', UA: 'UAL', EK: 'UAE', QR: 'QTR',
+      AC: 'ACA', LX: 'SWR', TK: 'THY', W6: 'WZZ',
+    };
+    const candidates = [input];
+    const match = input.match(/^([A-Z0-9]{2})([0-9].*)$/);
+    if (match && airlineMap[match[1]]) candidates.unshift(airlineMap[match[1]] + match[2]);
+
+    try {
+      for (const callsign of [...new Set(candidates)]) {
+        const upstream = `https://api.adsb.lol/v2/callsign/${encodeURIComponent(callsign)}`;
+        const response = await fetch(upstream, { headers: { Accept: 'application/json' } });
+        if (!response.ok) {
+          if (response.status === 404) continue;
+          return jsonResponse({ error: `ADS-B upstream HTTP ${response.status}` }, 502);
+        }
+        const data = await response.json();
+        const ac = Array.isArray(data?.ac) ? data.ac.filter(a =>
+          a && Number.isFinite(a.lat) && Number.isFinite(a.lon) &&
+          String(a.flight || '').trim().toUpperCase() === callsign
+        ) : [];
+        if (ac.length) return jsonResponse({ ac, query: input, callsign }, 200);
+      }
+      return jsonResponse({ ac: [], query: input }, 200);
+    } catch (_) {
+      return jsonResponse({ error: 'ADS-B search upstream unavailable' }, 502);
+    }
+  }
+
   if (url.pathname === '/route') {
     const callsign = (url.searchParams.get('callsign') || '').trim().toUpperCase();
     if (!/^[A-Z0-9_-]{2,12}$/.test(callsign)) return jsonResponse({ error: 'Invalid callsign' }, 400);
