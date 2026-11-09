@@ -548,6 +548,12 @@
 
 <style lang="less">
     .weather-flights-panel {
+        position: fixed;
+        top: 86px;
+        left: 18px;
+        right: auto;
+        bottom: auto;
+        z-index: 1200;
         box-sizing: border-box;
         width: 258px;
         color: #fff;
@@ -644,6 +650,14 @@
     .route-line { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.42), rgba(255,255,255,.18)); transform: translateY(-50%); }
     .route-plane { position: relative; z-index: 1; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(15,18,26,.95); box-shadow: 0 1px 4px rgba(0,0,0,.20); font-size: 11px; }
     .route-meta { margin-top: 8px; font-size: 10px; color: rgba(255,255,255,.60); text-align: center; }
+
+    @media (max-width: 900px) {
+        .weather-flights-panel {
+            top: 72px;
+            left: 10px;
+            width: min(258px, calc(100vw - 20px));
+        }
+    }
 
     :global(.windy-aircraft-icon-wrap), :global(.destination-airport-icon) { background: transparent !important; border: 0 !important; }
     :global(.aircraft-rotator) { width: 26px; height: 26px; transform-origin: 50% 50%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.95)); }
