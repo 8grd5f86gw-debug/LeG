@@ -560,6 +560,14 @@
 
 <style lang="less">
     .weather-flights-panel {
+        /* Panneau de réglages indépendant : côté droit */
+        position: fixed;
+        top: 95px;
+        right: 18px;
+        left: auto;
+        bottom: auto;
+        z-index: 12000;
+        max-height: min(300px, calc(100dvh - 110px));
         box-sizing: border-box;
         width: 258px;
         color: #fff;
@@ -679,12 +687,13 @@
         box-shadow: 0 2px 7px rgba(0,0,0,.35);
     }
     .standalone-aircraft-card {
-        position: fixed;
-        top: 86px;
-        left: 18px;
-        right: auto;
-        bottom: auto;
-        z-index: 13000;
+        /* Fiche avion distincte, en haut à gauche, jamais dans le menu */
+        position: fixed !important;
+        top: 88px !important;
+        left: 18px !important;
+        right: auto !important;
+        bottom: auto !important;
+        z-index: 2147483000 !important;
         box-sizing: border-box;
         width: 318px;
         max-width: calc(100vw - 36px);
@@ -703,12 +712,19 @@
         line-height: 1.3;
         font-family: Arial, Helvetica, sans-serif;
     }
-    @media (max-width: 650px) {
+    @media (max-width: 760px) {
+        .weather-flights-panel {
+            top: auto;
+            bottom: 110px;
+            right: 10px;
+            width: 230px;
+            max-height: 200px;
+        }
         .standalone-aircraft-card {
-            top: 68px;
-            left: 8px;
-            width: min(318px, calc(100vw - 16px));
-            max-height: calc(100dvh - 85px);
+            top: 62px !important;
+            left: 8px !important;
+            width: min(330px, calc(100vw - 16px));
+            max-height: calc(100dvh - 136px);
         }
     }
 
