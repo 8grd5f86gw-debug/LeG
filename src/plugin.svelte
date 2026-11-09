@@ -560,14 +560,14 @@
 
 <style lang="less">
     .weather-flights-panel {
-        /* Panneau de réglages indépendant : côté droit */
+        /* Panneau de réglages indépendant : en bas à droite, au-dessus des commandes Windy */
         position: fixed;
-        top: 95px;
+        top: auto;
         right: 18px;
         left: auto;
-        bottom: auto;
+        bottom: 126px;
         z-index: 12000;
-        max-height: min(300px, calc(100dvh - 110px));
+        max-height: min(300px, calc(100dvh - 180px));
         box-sizing: border-box;
         width: 258px;
         color: #fff;
