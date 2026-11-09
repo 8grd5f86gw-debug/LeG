@@ -7,6 +7,7 @@
     </div>
 
     {#if !collapsed}
+
         <div class="tabs" role="tablist" aria-label="Sections du plugin">
             <button class:active={activeTab === 'sky'} on:click={() => (activeTab = 'sky')}>☾ Ciel</button>
             <button class:active={activeTab === 'traffic'} on:click={() => (activeTab = 'traffic')}>✈ Vols</button>
@@ -77,47 +78,6 @@
                             </div>
                         </div>
 
-                        {#if selectedAircraftData}
-                            <div class="selected-card">
-                                <div class="selected-head">
-                                    <div class="selected-flight">{selectedAircraftData.callsign}</div>
-                                    <button class="selected-close" on:click={clearSelectionLayers} title="Fermer">×</button>
-                                </div>
-
-                                <div class="selected-grid">
-                                    <div class="sel-tile"><span>🪪</span><strong>{fmtText(selectedAircraftData.registration)}</strong></div>
-                                    <div class="sel-tile"><span>🛩</span><strong>{fmtText(selectedAircraftData.type)}</strong></div>
-                                    <div class="sel-tile"><span>⛰</span><strong>{fmtAlt(selectedAircraftData.altitudeFt)}</strong></div>
-                                    <div class="sel-tile"><span>⚡</span><strong>{fmtSpeed(selectedAircraftData.groundSpeedKt)}</strong></div>
-                                    <div class="sel-tile"><span>🧭</span><strong>{fmtTrack(selectedAircraftData.trackDeg)}</strong></div>
-                                    <div class="sel-tile"><span>↕</span><strong>{fmtVRate(selectedAircraftData.verticalRateFpm)}</strong></div>
-                                </div>
-
-                                <div class="selected-route-card">
-                                    {#if selectedRouteLoading}
-                                        <div class="selected-route-loading">Recherche route…</div>
-                                    {:else}
-                                        <div class="selected-route-strip">
-                                            <div class="route-end route-left">
-                                                <div class="route-code">{airportCode(selectedRoute, 'origin')}</div>
-                                                <div class="route-city">{airportCity(selectedRoute, 'origin')}</div>
-                                            </div>
-                                            <div class="route-center">
-                                                <div class="route-line"></div>
-                                                <div class="route-plane">✈</div>
-                                            </div>
-                                            <div class="route-end route-right">
-                                                <div class="route-code">{airportCode(selectedRoute, 'destination')}</div>
-                                                <div class="route-city">{airportCity(selectedRoute, 'destination')}</div>
-                                            </div>
-                                        </div>
-                                        {#if selectedRoute?.airline}
-                                            <div class="route-meta">{selectedRoute.airline}</div>
-                                        {/if}
-                                    {/if}
-                                </div>
-                            </div>
-                        {/if}
 
                         <div class="traffic-footer">
                             <a class="attribution" href="https://adsb.lol/" target="_blank" rel="noreferrer">adsb.lol</a>
@@ -131,12 +91,62 @@
     {/if}
 </div>
 
+
+<!-- Fiche avion indépendante : attachée au body pour ne pas être contrainte par le panneau Windy -->
+{#if selectedAircraftData}
+    <div class="selected-card standalone-aircraft-card" use:portal aria-label="Informations avion sélectionné">
+        <div class="selected-head">
+            <div class="selected-flight">{selectedAircraftData.callsign}</div>
+            <button class="selected-close" on:click={clearSelectionLayers} title="Fermer">×</button>
+        </div>
+
+        <div class="selected-grid">
+            <div class="sel-tile"><span>🪪</span><strong>{fmtText(selectedAircraftData.registration)}</strong></div>
+            <div class="sel-tile"><span>🛩</span><strong>{fmtText(selectedAircraftData.type)}</strong></div>
+            <div class="sel-tile"><span>⛰</span><strong>{fmtAlt(selectedAircraftData.altitudeFt)}</strong></div>
+            <div class="sel-tile"><span>⚡</span><strong>{fmtSpeed(selectedAircraftData.groundSpeedKt)}</strong></div>
+            <div class="sel-tile"><span>🧭</span><strong>{fmtTrack(selectedAircraftData.trackDeg)}</strong></div>
+            <div class="sel-tile"><span>↕</span><strong>{fmtVRate(selectedAircraftData.verticalRateFpm)}</strong></div>
+        </div>
+
+        <div class="selected-route-card">
+            {#if selectedRouteLoading}
+                <div class="selected-route-loading">Recherche route…</div>
+            {:else}
+                <div class="selected-route-strip">
+                    <div class="route-end route-left">
+                        <div class="route-code">{airportCode(selectedRoute, 'origin')}</div>
+                        <div class="route-city">{airportCity(selectedRoute, 'origin')}</div>
+                    </div>
+                    <div class="route-center">
+                        <div class="route-line"></div>
+                        <div class="route-plane">✈</div>
+                    </div>
+                    <div class="route-end route-right">
+                        <div class="route-code">{airportCode(selectedRoute, 'destination')}</div>
+                        <div class="route-city">{airportCity(selectedRoute, 'destination')}</div>
+                    </div>
+                </div>
+                {#if selectedRoute?.airline}
+                    <div class="route-meta">{selectedRoute.airline}</div>
+                {/if}
+            {/if}
+        </div>
+    </div>
+{/if}
+
 <script lang="ts">
     import { onDestroy, onMount } from 'svelte';
     import { map } from '@windy/map';
     import store from '@windy/store';
     import { formatUtc, getTwilightRings } from './solar';
     import { altitudeColor, fetchAircraft, fetchFlightRoute, ktToKmh, type Aircraft, type FlightRoute } from './airTraffic';
+
+    // Monte la fiche hors de la fenêtre du plugin : un panneau réellement indépendant.
+    function portal(node: HTMLElement) {
+        document.body.appendChild(node);
+        return { destroy: () => node.remove() };
+    }
 
     let enabled = true;
     let showTerminator = true;
@@ -364,6 +374,8 @@
         const state = aircraftMarkers.get(key);
         if (!state) return;
         selectedAircraftKey = key;
+        collapsed = false;
+        activeTab = 'traffic';
         updateSelectedOverlay();
         syncSelectedPanel();
 
@@ -548,12 +560,6 @@
 
 <style lang="less">
     .weather-flights-panel {
-        position: fixed;
-        top: 86px;
-        left: 18px;
-        right: auto;
-        bottom: auto;
-        z-index: 1200;
         box-sizing: border-box;
         width: 258px;
         color: #fff;
@@ -574,7 +580,7 @@
     .tabs { margin: 0 9px; padding: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: rgba(255,255,255,.06); border-radius: 12px; }
     .tabs button { border: 0; border-radius: 10px; padding: 8px 6px; background: transparent; color: rgba(255,255,255,.70); font-size: 11.5px; font-weight: 700; cursor: pointer; }
     .tabs button.active { background: rgba(255,255,255,.12); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.05); }
-    .panel-body { max-height: 340px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    .panel-body { max-height: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
     .section { padding: 11px 12px 12px; }
     .toggle-pills { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
     .toggle-pill { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 6px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.06); border-radius: 11px; cursor: pointer; }
@@ -614,7 +620,11 @@
     .switch-mini input:checked + span::after { left: 17px; }
 
     .selected-card {
-        margin-top: 12px;
+        margin: 0 10px 10px;
+        max-height: min(410px, calc(100vh - 270px));
+        overflow-y: auto;
+        scrollbar-width: thin;
+        overscroll-behavior: contain;
         padding: 10px;
         border-radius: 12px;
         background: rgba(255,255,255,.06);
@@ -651,13 +661,6 @@
     .route-plane { position: relative; z-index: 1; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(15,18,26,.95); box-shadow: 0 1px 4px rgba(0,0,0,.20); font-size: 11px; }
     .route-meta { margin-top: 8px; font-size: 10px; color: rgba(255,255,255,.60); text-align: center; }
 
-    @media (max-width: 900px) {
-        .weather-flights-panel {
-            top: 72px;
-            left: 10px;
-            width: min(258px, calc(100vw - 20px));
-        }
-    }
 
     :global(.windy-aircraft-icon-wrap), :global(.destination-airport-icon) { background: transparent !important; border: 0 !important; }
     :global(.aircraft-rotator) { width: 26px; height: 26px; transform-origin: 50% 50%; filter: drop-shadow(0 1px 2px rgba(0,0,0,.95)); }
@@ -675,4 +678,38 @@
         white-space: nowrap;
         box-shadow: 0 2px 7px rgba(0,0,0,.35);
     }
+    .standalone-aircraft-card {
+        position: fixed;
+        top: 86px;
+        left: 18px;
+        right: auto;
+        bottom: auto;
+        z-index: 13000;
+        box-sizing: border-box;
+        width: 318px;
+        max-width: calc(100vw - 36px);
+        max-height: calc(100dvh - 112px);
+        overflow-y: auto;
+        scrollbar-width: thin;
+        margin: 0;
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(22, 26, 34, .96);
+        border: 1px solid rgba(255,255,255,.14);
+        color: #fff;
+        box-shadow: 0 12px 36px rgba(0,0,0,.42);
+        backdrop-filter: blur(12px);
+        font-size: 12px;
+        line-height: 1.3;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+    @media (max-width: 650px) {
+        .standalone-aircraft-card {
+            top: 68px;
+            left: 8px;
+            width: min(318px, calc(100vw - 16px));
+            max-height: calc(100dvh - 85px);
+        }
+    }
+
 </style>
